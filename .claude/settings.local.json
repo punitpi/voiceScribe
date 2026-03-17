@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(/opt/homebrew/bin/npm run dev --prefix /Users/puneethprakash/Documents/repo/mine/voiceScribe/backend)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(/opt/homebrew/bin/npm create vite@latest frontend -- --template react-ts)",
+      "Bash(/opt/homebrew/bin/npm install --prefix /Users/puneethprakash/Documents/repo/mine/voiceScribe/frontend @mui/material @emotion/react @emotion/styled @mui/icons-material axios react-router-dom react-dropzone react-media-recorder socket.io-client)",
+      "Bash(/opt/homebrew/bin/npm install --prefix /Users/puneethprakash/Documents/repo/mine/voiceScribe/frontend -D tailwindcss postcss autoprefixer)",
+      "Bash(/opt/homebrew/bin/npx tailwindcss init -p --prefix /Users/puneethprakash/Documents/repo/mine/voiceScribe/frontend)",
+      "Bash(/opt/homebrew/bin/npx tailwindcss init -p)",
+      "Bash(/opt/homebrew/bin/npm run dev --prefix /Users/puneethprakash/Documents/repo/mine/voiceScribe/frontend)",
+      "Bash(sqlite3:*)",
+      "Bash(/opt/homebrew/bin/npm install --prefix /Users/puneethprakash/Documents/repo/mine/voiceScribe -D concurrently)",
+      "Bash(/opt/homebrew/bin/npm run dev --prefix /Users/puneethprakash/Documents/repo/mine/voiceScribe)",
+      "Bash(/opt/homebrew/bin/npm uninstall --prefix /Users/puneethprakash/Documents/repo/mine/voiceScribe/frontend tailwindcss postcss autoprefixer)",
+      "Bash(/opt/homebrew/bin/npm install --prefix /Users/puneethprakash/Documents/repo/mine/voiceScribe/frontend -D tailwindcss@^3 postcss autoprefixer)",
+      "Bash(pkill:*)",
+      "Bash(/opt/homebrew/bin/npm install --prefix /Users/puneethprakash/Documents/repo/mine/voiceScribe/backend form-data)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(cat:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -137,3 +137,17 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# VoiceScribe specific
+backend/uploads/audio/*
+backend/uploads/pdfs/*
+!backend/uploads/audio/.gitkeep
+!backend/uploads/pdfs/.gitkeep
+backend/data/*.db
+backend/data/*.db-journal
+backend/dist/
+frontend/dist/
+
+# OS specific
+.DS_Store
+Thumbs.db

@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom global styles for VoiceScribe - Elderly-friendly design */
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Roboto, 'Segoe UI', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #ffffff;
+  color: #1f2937;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Remove focus outline from MUI components (MUI has its own focus styles) */
+button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
