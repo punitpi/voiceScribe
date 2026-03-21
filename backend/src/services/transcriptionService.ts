@@ -1,24 +1,10 @@
-import axios from 'axios';
-import FormData from 'form-data';
 import fs from 'fs';
 import path from 'path';
 import { db } from '../config/database';
 import { Recording, Transcription } from '../types/models';
 import { formatTranscription } from './textFormattingService';
 import { getSocketIO } from '../config/socket';
-import { transcribeWithBhashini, isBhashiniAvailable } from './bhashiniService';
-
-const WHISPER_API_URL = 'https://api.openai.com/v1/audio/transcriptions';
-
-// Get API key at runtime, not at module load time
-const getOpenAIKey = () => {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) {
-    console.error('OPENAI_API_KEY not found in process.env');
-    console.error('Available env keys:', Object.keys(process.env).filter(k => k.includes('OPENAI')));
-  }
-  return key;
-};
+import { transcribeWithSarvam } from './sarvamService';
 
 // Retry configuration
 const MAX_RETRIES = 3;
@@ -38,19 +24,25 @@ const getRetryDelay = (attempt: number): number => {
   return INITIAL_RETRY_DELAY * Math.pow(2, attempt);
 };
 
+type TranscriptionEvent = 'transcription:progress' | 'transcription:complete' | 'transcription:error';
+
+const emitProgress = (event: TranscriptionEvent, payload: Record<string, unknown>): void => {
+  try {
+    getSocketIO().emit(event, payload);
+  } catch {
+    console.warn('Socket.IO not available');
+  }
+};
+
 /**
- * Transcribe audio file using OpenAI Whisper API
+ * Transcribe audio file using Sarvam AI (Saaras v3)
  */
 export const transcribeAudio = async (
   recordingId: number,
   onProgress?: (status: string) => void
 ): Promise<Transcription> => {
+  let statusUpdated = false;
   try {
-    const OPENAI_API_KEY = getOpenAIKey();
-    if (!OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY is not configured');
-    }
-
     // Get recording details
     const recording = await new Promise<Recording>((resolve, reject) => {
       db.get('SELECT * FROM recordings WHERE id = ?', [recordingId], (err, row: Recording) => {
@@ -64,42 +56,17 @@ export const transcribeAudio = async (
     await updateRecordingStatus(recordingId, 'transcribing');
     onProgress?.('transcribing');
 
-    // Emit Socket.IO event
-    try {
-      const io = getSocketIO();
-      io.emit('transcription:progress', {
-        recordingId,
-        status: 'transcribing',
-        progress: 10,
-        message: 'Preparing audio file for transcription...'
-      });
-    } catch (err) {
-      console.warn('Socket.IO not available:', err);
-    }
+    emitProgress('transcription:progress', { recordingId, status: 'transcribing', progress: 10, message: 'Preparing audio file for transcription...' });
 
-    const audioFilePath = path.join('./uploads/audio', recording.filename);
+    const UPLOAD_ROOT = path.resolve('./uploads/audio');
+    const audioFilePath = path.resolve(UPLOAD_ROOT, recording.filename);
+    if (!audioFilePath.startsWith(UPLOAD_ROOT + path.sep)) {
+      throw new Error('Invalid recording filename');
+    }
 
     if (!fs.existsSync(audioFilePath)) {
       throw new Error('Audio file not found on disk');
     }
-
-    // Prepare form data for Whisper API
-    const formData = new FormData();
-    formData.append('file', fs.createReadStream(audioFilePath));
-    formData.append('model', 'whisper-1');
-    // Set language to ensure transcription stays in original language (not translated)
-    if (recording.language === 'kn') {
-      formData.append('language', 'kn'); // Kannada
-      // Add a prompt with Kannada text to improve accuracy
-      // This helps Whisper understand the context and use proper Kannada vocabulary
-      formData.append('prompt', 'ಈ ಆಡಿಯೋ ಕನ್ನಡ ಭಾಷೆಯಲ್ಲಿದೆ. ದಯವಿಟ್ಟು ಸರಿಯಾದ ಕನ್ನಡ ಪದಗಳನ್ನು ಮತ್ತು ವ್ಯಾಕರಣವನ್ನು ಬಳಸಿ.');
-      // Lower temperature for more accurate/consistent transcription
-      formData.append('temperature', '0');
-    } else {
-      formData.append('language', 'en'); // English
-      formData.append('temperature', '0'); // Lower temperature for accuracy
-    }
-    formData.append('response_format', 'verbose_json'); // Get detailed response with timestamps
 
     let lastError: Error | null = null;
     let attempt = 0;
@@ -109,67 +76,20 @@ export const transcribeAudio = async (
       try {
         console.log(`Transcription attempt ${attempt + 1}/${MAX_RETRIES} for recording ${recordingId}`);
 
-        // Emit progress update before API call (25%)
-        try {
-          const io = getSocketIO();
-          io.emit('transcription:progress', {
-            recordingId,
-            status: 'transcribing',
-            progress: 25,
-            message: 'Sending audio to AI transcription service...'
-          });
-        } catch (err) {
-          console.warn('Socket.IO not available:', err);
-        }
+        emitProgress('transcription:progress', { recordingId, status: 'transcribing', progress: 25, message: 'Sending audio to AI transcription service...' });
 
-        const response = await axios.post(WHISPER_API_URL, formData, {
-          headers: {
-            'Authorization': `Bearer ${getOpenAIKey()}`,
-            ...formData.getHeaders()
-          },
-          timeout: 300000 // 5 minutes timeout (increased for longer audio files)
-        });
+        const language = (recording.language === 'kn' ? 'kn' : 'en') as 'en' | 'kn';
+        const text = await transcribeWithSarvam(audioFilePath, language);
 
-        const { text, duration, language, words } = response.data;
+        emitProgress('transcription:progress', { recordingId, status: 'transcribing', progress: 50, message: 'Transcription complete, applying formatting...' });
 
-        // Emit progress update after transcription completes (50%)
-        try {
-          const io = getSocketIO();
-          io.emit('transcription:progress', {
-            recordingId,
-            status: 'transcribing',
-            progress: 50,
-            message: 'Transcription complete, applying formatting...'
-          });
-        } catch (err) {
-          console.warn('Socket.IO not available:', err);
-        }
-
-        // Apply auto-formatting to the transcription
-        const timestamps = words && Array.isArray(words) ? words.map((w: any) => ({
-          word: w.word,
-          start: w.start,
-          end: w.end
-        })) : undefined;
-
-        const formattedText = formatTranscription(text, timestamps, {
+        const formattedText = formatTranscription(text, undefined, {
           removeFillersWords: true,
           pauseThreshold: 2.0,
-          language: (language || recording.language) as 'en' | 'kn'
+          language
         });
 
-        // Emit progress update after formatting (75%)
-        try {
-          const io = getSocketIO();
-          io.emit('transcription:progress', {
-            recordingId,
-            status: 'transcribing',
-            progress: 75,
-            message: 'Formatting complete, saving to database...'
-          });
-        } catch (err) {
-          console.warn('Socket.IO not available:', err);
-        }
+        emitProgress('transcription:progress', { recordingId, status: 'transcribing', progress: 75, message: 'Formatting complete, saving to database...' });
 
         // Create transcription record
         const transcription = await createTranscription({
@@ -177,44 +97,26 @@ export const transcribeAudio = async (
           raw_text: text,
           formatted_text: formattedText,
           word_count: countWords(formattedText),
-          language: language || recording.language,
-          confidence: 1.0 // Whisper doesn't provide confidence scores
+          language: recording.language,
+          confidence: 1.0
         });
-
-        // Update recording duration if available
-        if (duration) {
-          await updateRecordingDuration(recordingId, Math.round(duration));
-        }
 
         // Update recording status to 'completed'
         await updateRecordingStatus(recordingId, 'completed');
         onProgress?.('completed');
 
-        // Emit Socket.IO event for completion
-        try {
-          const io = getSocketIO();
-          io.emit('transcription:complete', {
-            recordingId,
-            transcriptionId: transcription.id,
-            status: 'completed',
-            progress: 100,
-            message: 'Transcription completed successfully!',
-            wordCount: transcription.word_count
-          });
-        } catch (err) {
-          console.warn('Socket.IO not available:', err);
-        }
+        emitProgress('transcription:complete', { recordingId, transcriptionId: transcription.id, status: 'completed', progress: 100, message: 'Transcription completed successfully!', wordCount: transcription.word_count });
 
         console.log(`✅ Transcription completed for recording ${recordingId}`);
         return transcription;
 
-      } catch (error: any) {
-        lastError = error;
+      } catch (error: unknown) {
+        lastError = error instanceof Error ? error : new Error(String(error));
         attempt++;
 
         if (attempt < MAX_RETRIES) {
           const delay = getRetryDelay(attempt - 1);
-          console.log(`Transcription failed, retrying in ${delay}ms... (${error.message})`);
+          console.log(`Transcription failed, retrying in ${delay}ms... (${lastError.message})`);
           await sleep(delay);
         }
       }
@@ -222,34 +124,25 @@ export const transcribeAudio = async (
 
     // All retries failed
     await updateRecordingStatus(recordingId, 'failed');
+    statusUpdated = true;
     onProgress?.('failed');
 
-    // Emit Socket.IO event for failure
-    try {
-      const io = getSocketIO();
-      io.emit('transcription:error', {
-        recordingId,
-        status: 'failed',
-        error: lastError?.message || 'Unknown error',
-        message: `Transcription failed after ${MAX_RETRIES} attempts`
-      });
-    } catch (err) {
-      console.warn('Socket.IO not available:', err);
-    }
+    emitProgress('transcription:error', { recordingId, status: 'failed', error: lastError?.message || 'Unknown error', message: `Transcription failed after ${MAX_RETRIES} attempts` });
 
     throw new Error(
       `Transcription failed after ${MAX_RETRIES} attempts: ${lastError?.message || 'Unknown error'}`
     );
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Transcription error:', error);
 
-    // Update recording status to 'failed'
-    try {
-      await updateRecordingStatus(recordingId, 'failed');
-      onProgress?.('failed');
-    } catch (updateError) {
-      console.error('Error updating recording status:', updateError);
+    if (!statusUpdated) {
+      try {
+        await updateRecordingStatus(recordingId, 'failed');
+        onProgress?.('failed');
+      } catch (updateError) {
+        console.error('Error updating recording status:', updateError);
+      }
     }
 
     throw error;
@@ -287,22 +180,6 @@ const updateRecordingStatus = async (recordingId: number, status: string): Promi
     db.run(
       'UPDATE recordings SET status = ? WHERE id = ?',
       [status, recordingId],
-      (err) => {
-        if (err) reject(err);
-        else resolve();
-      }
-    );
-  });
-};
-
-/**
- * Update recording duration
- */
-const updateRecordingDuration = async (recordingId: number, duration: number): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    db.run(
-      'UPDATE recordings SET duration = ? WHERE id = ?',
-      [duration, recordingId],
       (err) => {
         if (err) reject(err);
         else resolve();

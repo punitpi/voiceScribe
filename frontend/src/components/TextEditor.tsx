@@ -1,168 +1,137 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  Box,
-  TextField,
-  Typography,
-  Chip,
-  CircularProgress,
-  Alert,
-  Paper,
-} from '@mui/material';
-import SaveIcon from '@mui/icons-material/Save';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import { Box, TextField, Typography, Alert } from '@mui/material';
+import { getErrorMessage } from '../utils/getErrorMessage';
+import { COLORS } from '../theme/theme';
 
 interface TextEditorProps {
   initialContent: string;
   onSave: (content: string) => Promise<void>;
-  autoSaveDelay?: number; // milliseconds
+  autoSaveDelay?: number;
   projectTitle?: string;
 }
 
-export default function TextEditor({
-  initialContent,
-  onSave,
-  autoSaveDelay = 3000,
-  projectTitle,
-}: TextEditorProps) {
+export default function TextEditor({ initialContent, onSave, autoSaveDelay = 3000 }: TextEditorProps) {
   const [content, setContent] = useState(initialContent);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   const [error, setError] = useState<string | null>(null);
-  const [wordCount, setWordCount] = useState(0);
-  const [characterCount, setCharacterCount] = useState(0);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedContentRef = useRef(initialContent);
 
-  // Update content when initialContent changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setContent(initialContent);
     lastSavedContentRef.current = initialContent;
   }, [initialContent]);
 
-  // Calculate word and character count
-  useEffect(() => {
-    const words = content.trim().split(/\s+/).filter(w => w.length > 0);
-    setWordCount(words.length);
-    setCharacterCount(content.length);
-  }, [content]);
+  const trimmed = content.trim();
+  const wordCount = trimmed ? trimmed.split(/\s+/).length : 0;
+  const charCount = content.length;
+  const pageEst = Math.max(1, Math.ceil(wordCount / 250));
 
-  // Auto-save logic
   const handleSave = useCallback(async () => {
-    if (content === lastSavedContentRef.current) {
-      return; // No changes to save
-    }
-
+    if (content === lastSavedContentRef.current) return;
     try {
       setSaveStatus('saving');
       setError(null);
       await onSave(content);
       lastSavedContentRef.current = content;
       setSaveStatus('saved');
-    } catch (err: any) {
-      console.error('Failed to save:', err);
-      setError(err.response?.data?.error || 'Failed to save document');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to save document'));
       setSaveStatus('unsaved');
     }
   }, [content, onSave]);
 
-  // Debounced auto-save
   useEffect(() => {
     if (content !== lastSavedContentRef.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSaveStatus('unsaved');
-
-      // Clear existing timeout
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-
-      // Set new timeout
-      saveTimeoutRef.current = setTimeout(() => {
-        handleSave();
-      }, autoSaveDelay);
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(handleSave, autoSaveDelay);
     }
-
-    // Cleanup
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
+    return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [content, handleSave, autoSaveDelay]);
-
-  const handleContentChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setContent(event.target.value);
-  };
 
   return (
     <Box>
-      {/* Header */}
-      <Paper
+      {/* Toolbar */}
+      <Box
         sx={{
-          p: 2,
-          mb: 2,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           flexWrap: 'wrap',
           gap: 2,
+          mb: 2,
+          px: 0,
         }}
       >
-        <Box>
-          {projectTitle && (
-            <Typography variant="h6" gutterBottom>
-              {projectTitle}
-            </Typography>
-          )}
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-            <Chip
-              label={`${wordCount} words`}
-              size="medium"
-              color="primary"
-              variant="outlined"
-            />
-            <Chip
-              label={`${characterCount} characters`}
-              size="medium"
-              color="primary"
-              variant="outlined"
-            />
-            <Chip
-              label={`~${Math.ceil(wordCount / 250)} pages`}
-              size="medium"
-              color="primary"
-              variant="outlined"
-            />
-          </Box>
+        {/* Stats */}
+        <Box sx={{ display: 'flex', gap: 3, alignItems: 'center', flexWrap: 'wrap' }}>
+          {[
+            { value: wordCount.toLocaleString(), label: 'words' },
+            { value: charCount.toLocaleString(), label: 'chars' },
+            { value: `~${pageEst}`, label: pageEst === 1 ? 'page' : 'pages' },
+          ].map(({ value, label }) => (
+            <Box key={label} sx={{ display: 'flex', alignItems: 'baseline', gap: '3px' }}>
+              <Typography
+                sx={{
+                  fontFamily: '"Playfair Display", Georgia, serif',
+                  fontSize: '1.35rem',
+                  fontWeight: 700,
+                  color: COLORS.ink,
+                  lineHeight: 1,
+                }}
+              >
+                {value}
+              </Typography>
+              <Typography
+                sx={{
+                  fontFamily: '"DM Mono", monospace',
+                  fontSize: '0.68rem',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: COLORS.inkFaint,
+                }}
+              >
+                {label}
+              </Typography>
+            </Box>
+          ))}
         </Box>
 
+        {/* Save status */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {saveStatus === 'saving' && (
             <>
-              <CircularProgress size={20} />
-              <Typography variant="body2" color="text.secondary">
-                Saving...
+              <Box
+                sx={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  backgroundColor: COLORS.gold,
+                  animation: 'recording-pulse 1s ease infinite',
+                }}
+              />
+              <Typography sx={{ fontFamily: '"DM Mono", monospace', fontSize: '0.78rem', color: COLORS.inkFaint }}>
+                saving…
               </Typography>
             </>
           )}
           {saveStatus === 'saved' && (
             <>
-              <CheckCircleIcon color="success" />
-              <Typography variant="body2" color="success.main">
-                All changes saved
+              <Box sx={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: COLORS.sage }} />
+              <Typography sx={{ fontFamily: '"DM Mono", monospace', fontSize: '0.78rem', color: COLORS.sage }}>
+                saved
               </Typography>
             </>
           )}
           {saveStatus === 'unsaved' && (
-            <>
-              <SaveIcon color="action" />
-              <Typography variant="body2" color="text.secondary">
-                Unsaved changes
-              </Typography>
-            </>
+            <Typography sx={{ fontFamily: '"DM Mono", monospace', fontSize: '0.78rem', color: COLORS.inkFaint }}>
+              unsaved
+            </Typography>
           )}
         </Box>
-      </Paper>
+      </Box>
 
-      {/* Error Alert */}
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
@@ -170,30 +139,46 @@ export default function TextEditor({
       )}
 
       {/* Editor */}
-      <TextField
-        multiline
-        fullWidth
-        value={content}
-        onChange={handleContentChange}
-        placeholder="Start writing your book here... All changes are automatically saved."
+      <Box
         sx={{
-          '& .MuiInputBase-root': {
-            fontSize: '1.125rem',
-            lineHeight: 1.8,
-            fontFamily: 'Georgia, serif',
-            minHeight: '60vh',
-            alignItems: 'flex-start',
-          },
-          '& .MuiInputBase-input': {
-            p: 3,
-          },
+          border: `1px solid ${COLORS.border}`,
+          borderRadius: '8px',
+          overflow: 'hidden',
+          backgroundColor: '#FFFEF9',
+          boxShadow: 'inset 0 1px 4px rgba(28,25,23,0.04)',
         }}
-        InputProps={{
-          sx: {
-            fontSize: '1.125rem',
-          },
-        }}
-      />
+      >
+        <TextField
+          multiline
+          fullWidth
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="Begin writing here… your words will be saved automatically."
+          variant="standard"
+          InputProps={{ disableUnderline: true }}
+          sx={{
+            '& .MuiInputBase-root': {
+              padding: '24px 32px',
+              fontSize: '1.125rem',
+              lineHeight: 1.85,
+              fontFamily: '"Playfair Display", Georgia, serif',
+              color: COLORS.ink,
+              minHeight: '62vh',
+              alignItems: 'flex-start',
+              backgroundColor: 'transparent',
+            },
+            '& .MuiInputBase-input': {
+              caretColor: COLORS.gold,
+              '&::placeholder': {
+                color: COLORS.inkFaint,
+                fontStyle: 'italic',
+                fontFamily: 'Georgia, serif',
+                fontSize: '1.0625rem',
+              },
+            },
+          }}
+        />
+      </Box>
     </Box>
   );
 }

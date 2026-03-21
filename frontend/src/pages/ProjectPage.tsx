@@ -1,28 +1,27 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
-  Card,
-  CardContent,
   Typography,
   Alert,
   CircularProgress,
   Grid,
-  Tabs,
   Tab,
-  Chip,
-  IconButton,
+  Tabs,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import MicIcon from '@mui/icons-material/Mic';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import EditIcon from '@mui/icons-material/Edit';
+import AutoStoriesIcon from '@mui/icons-material/AutoStories';
 import { projectsApi, recordingsApi } from '../services/api';
 import type { Project, ProjectStats, Recording } from '../types';
+import { getErrorMessage } from '../utils/getErrorMessage';
 import AudioRecorder from '../components/AudioRecorder';
 import AudioUploader from '../components/AudioUploader';
 import RecordingsList from '../components/RecordingsList';
+import LanguagePill from '../components/LanguagePill';
+import { COLORS } from '../theme/theme';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -30,12 +29,51 @@ interface TabPanelProps {
   value: number;
 }
 
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
+function TabPanel({ children, value, index }: TabPanelProps) {
   return (
-    <div role="tabpanel" hidden={value !== index} {...other}>
+    <div role="tabpanel" hidden={value !== index}>
       {value === index && <Box sx={{ pt: 3 }}>{children}</Box>}
     </div>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <Box
+      sx={{
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: '8px',
+        backgroundColor: COLORS.cream,
+        px: 3,
+        py: 2.5,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 0.5,
+      }}
+    >
+      <Typography
+        sx={{
+          fontFamily: '"DM Mono", monospace',
+          fontSize: '0.7rem',
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          color: COLORS.inkFaint,
+        }}
+      >
+        {label}
+      </Typography>
+      <Typography
+        sx={{
+          fontFamily: '"Playfair Display", Georgia, serif',
+          fontSize: '2rem',
+          fontWeight: 700,
+          lineHeight: 1,
+          color: COLORS.ink,
+        }}
+      >
+        {value}
+      </Typography>
+    </Box>
   );
 }
 
@@ -49,47 +87,28 @@ export default function ProjectPage() {
   const [error, setError] = useState<string | null>(null);
   const [tabValue, setTabValue] = useState(0);
 
-  useEffect(() => {
-    if (id) {
-      loadProjectData();
-    }
-  }, [id]);
-
-  const loadProjectData = async () => {
+  const loadProjectData = useCallback(async () => {
+    if (!id) return;
     try {
       setLoading(true);
       setError(null);
-      const projectId = parseInt(id!);
-
+      const projectId = parseInt(id);
       const [projectRes, statsRes, recordingsRes] = await Promise.all([
         projectsApi.getById(projectId),
         projectsApi.getStats(projectId),
         recordingsApi.getByProject(projectId),
       ]);
-
-      if (projectRes.data.success && projectRes.data.data) {
-        setProject(projectRes.data.data);
-      }
-      if (statsRes.data.success && statsRes.data.data) {
-        setStats(statsRes.data.data);
-      }
-      if (recordingsRes.data.success && recordingsRes.data.data) {
-        setRecordings(recordingsRes.data.data);
-      }
-    } catch (err: any) {
-      setError(err.response?.data?.error || err.message || 'Failed to load project');
+      if (projectRes.data.success && projectRes.data.data) setProject(projectRes.data.data);
+      if (statsRes.data.success && statsRes.data.data) setStats(statsRes.data.data);
+      if (recordingsRes.data.success && recordingsRes.data.data) setRecordings(recordingsRes.data.data);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to load project'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
-  const handleRecordingUploaded = () => {
-    loadProjectData();
-  };
-
-  const handleRecordingDeleted = () => {
-    loadProjectData();
-  };
+  useEffect(() => { loadProjectData(); }, [loadProjectData]);
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -100,7 +119,7 @@ export default function ProjectPage() {
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-        <CircularProgress size={60} />
+        <CircularProgress size={40} />
       </Box>
     );
   }
@@ -108,8 +127,8 @@ export default function ProjectPage() {
   if (error || !project) {
     return (
       <Box>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/')} size="large" sx={{ mb: 3 }}>
-          Back to Dashboard
+        <Button startIcon={<ArrowBackIcon />} variant="outlined" onClick={() => navigate('/')} sx={{ mb: 3 }}>
+          Back to Library
         </Button>
         <Alert severity="error">{error || 'Project not found'}</Alert>
       </Box>
@@ -118,145 +137,150 @@ export default function ProjectPage() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-        <IconButton onClick={() => navigate('/')} size="large" sx={{ mr: 2 }}>
-          <ArrowBackIcon />
-        </IconButton>
-        <Box sx={{ flexGrow: 1 }}>
-          <Typography variant="h3" component="h2">
-            {project.title}
-          </Typography>
-          {project.author_name && (
-            <Typography variant="h6" color="text.secondary">
-              by {project.author_name}
+      {/* Back + title header */}
+      <Box sx={{ mb: 5 }}>
+        <Button
+          startIcon={<ArrowBackIcon sx={{ fontSize: '1rem !important' }} />}
+          variant="text"
+          onClick={() => navigate('/')}
+          sx={{
+            color: COLORS.inkFaint,
+            fontSize: '0.9rem',
+            fontStyle: 'italic',
+            mb: 2,
+            px: 0,
+            '&:hover': { backgroundColor: 'transparent', color: COLORS.ink },
+          }}
+        >
+          Back to library
+        </Button>
+
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 3, flexWrap: 'wrap' }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            {/* Language pill */}
+            <Box sx={{ mb: 1.5 }}>
+              <LanguagePill language={project.language} />
+            </Box>
+            <Typography variant="h2" sx={{ mb: 0.5, fontStyle: 'italic' }}>
+              {project.title}
             </Typography>
-          )}
+            {project.author_name && (
+              <Typography variant="body1" sx={{ color: COLORS.inkFaint }}>
+                by {project.author_name}
+              </Typography>
+            )}
+            {project.description && (
+              <Typography variant="body2" sx={{ color: COLORS.inkLight, mt: 1, maxWidth: 640, lineHeight: 1.7 }}>
+                {project.description}
+              </Typography>
+            )}
+          </Box>
+
+          {/* Edit document CTA */}
+          <Button
+            variant="contained"
+            size="large"
+            startIcon={<AutoStoriesIcon sx={{ fontSize: '1.1rem !important' }} />}
+            onClick={() => navigate(`/project/${id}/document`)}
+            sx={{ flexShrink: 0 }}
+          >
+            Edit Document
+          </Button>
         </Box>
-        <Chip
-          label={project.language === 'en' ? 'English' : 'ಕನ್ನಡ'}
-          color="primary"
-          size="medium"
-        />
       </Box>
 
-      {project.description && (
-        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-          {project.description}
-        </Typography>
-      )}
-
-      {/* Project Statistics */}
+      {/* Stats row */}
       {stats && (
-        <Grid container spacing={2} sx={{ mb: 4 }}>
-          <Grid item xs={12} sm={6} md={3}>
-            <Card>
-              <CardContent>
-                <Typography variant="body2" color="text.secondary">
-                  Recordings
-                </Typography>
-                <Typography variant="h4">{stats.totalRecordings}</Typography>
-              </CardContent>
-            </Card>
+        <Grid container spacing={2} sx={{ mb: 5 }}>
+          <Grid item xs={6} sm={3}>
+            <StatCard label="Recordings" value={stats.totalRecordings} />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Card>
-              <CardContent>
-                <Typography variant="body2" color="text.secondary">
-                  Duration
-                </Typography>
-                <Typography variant="h4">
-                  {stats.totalDuration > 0 ? formatDuration(stats.totalDuration) : '0:00'}
-                </Typography>
-              </CardContent>
-            </Card>
+          <Grid item xs={6} sm={3}>
+            <StatCard label="Duration" value={stats.totalDuration > 0 ? formatDuration(stats.totalDuration) : '0:00'} />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Card>
-              <CardContent>
-                <Typography variant="body2" color="text.secondary">
-                  Words
-                </Typography>
-                <Typography variant="h4">{stats.wordCount.toLocaleString()}</Typography>
-              </CardContent>
-            </Card>
+          <Grid item xs={6} sm={3}>
+            <StatCard label="Words" value={stats.wordCount.toLocaleString()} />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Card>
-              <CardContent>
-                <Typography variant="body2" color="text.secondary">
-                  Pages
-                </Typography>
-                <Typography variant="h4">{stats.pageCount}</Typography>
-              </CardContent>
-            </Card>
+          <Grid item xs={6} sm={3}>
+            <StatCard label="Pages" value={stats.pageCount} />
           </Grid>
         </Grid>
       )}
 
-      {/* Tabs for Record and Upload */}
-      <Card>
-        <Tabs
-          value={tabValue}
-          onChange={(_, newValue) => setTabValue(newValue)}
-          sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}
-        >
-          <Tab
-            icon={<MicIcon />}
-            iconPosition="start"
-            label="Record Audio"
-            sx={{ fontSize: '1.125rem', minHeight: 64 }}
-          />
-          <Tab
-            icon={<UploadFileIcon />}
-            iconPosition="start"
-            label="Upload File"
-            sx={{ fontSize: '1.125rem', minHeight: 64 }}
-          />
-        </Tabs>
-
-        <CardContent sx={{ minHeight: 300 }}>
+      {/* Record / Upload tabs */}
+      <Box
+        sx={{
+          border: `1px solid ${COLORS.border}`,
+          borderRadius: '10px',
+          backgroundColor: COLORS.cream,
+          mb: 5,
+          overflow: 'hidden',
+        }}
+      >
+        <Box sx={{ borderBottom: `1px solid ${COLORS.border}` }}>
+          <Tabs
+            value={tabValue}
+            onChange={(_, v) => setTabValue(v)}
+            sx={{
+              px: 2,
+              '& .MuiTabs-indicator': { backgroundColor: COLORS.gold, height: 2 },
+            }}
+          >
+            <Tab
+              icon={<MicIcon sx={{ fontSize: '1.1rem' }} />}
+              iconPosition="start"
+              label="Record"
+              sx={{ minHeight: 54, fontSize: '0.975rem', gap: 0.75 }}
+            />
+            <Tab
+              icon={<UploadFileIcon sx={{ fontSize: '1.1rem' }} />}
+              iconPosition="start"
+              label="Upload file"
+              sx={{ minHeight: 54, fontSize: '0.975rem', gap: 0.75 }}
+            />
+          </Tabs>
+        </Box>
+        <Box sx={{ p: 3, minHeight: 240 }}>
           <TabPanel value={tabValue} index={0}>
             <AudioRecorder
               projectId={parseInt(id!)}
               language={project.language}
-              onRecordingUploaded={handleRecordingUploaded}
+              onRecordingUploaded={loadProjectData}
             />
           </TabPanel>
           <TabPanel value={tabValue} index={1}>
             <AudioUploader
               projectId={parseInt(id!)}
               language={project.language}
-              onUploadComplete={handleRecordingUploaded}
+              onUploadComplete={loadProjectData}
             />
           </TabPanel>
-        </CardContent>
-      </Card>
-
-      {/* Edit Document Button */}
-      <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}>
-        <Button
-          variant="contained"
-          color="primary"
-          size="large"
-          startIcon={<EditIcon />}
-          onClick={() => navigate(`/project/${id}/document`)}
-          sx={{ minHeight: 56, fontSize: '1.125rem', px: 4 }}
-        >
-          Edit Document
-        </Button>
+        </Box>
       </Box>
 
-      {/* Recordings List */}
-      <Box sx={{ mt: 4 }}>
-        <Typography variant="h4" sx={{ mb: 3 }}>
-          Recordings
-        </Typography>
-        <RecordingsList
-          recordings={recordings}
-          onRecordingDeleted={handleRecordingDeleted}
-          onTranscriptionComplete={loadProjectData}
-        />
-      </Box>
+      {/* Recordings list */}
+      {recordings.length > 0 && (
+        <Box>
+          <Typography
+            variant="body2"
+            sx={{
+              fontFamily: '"DM Mono", monospace',
+              fontSize: '0.7rem',
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: COLORS.inkFaint,
+              mb: 2,
+            }}
+          >
+            Recordings — {recordings.length}
+          </Typography>
+          <RecordingsList
+            recordings={recordings}
+            onRecordingDeleted={loadProjectData}
+            onTranscriptionComplete={loadProjectData}
+          />
+        </Box>
+      )}
     </Box>
   );
 }

@@ -1,13 +1,9 @@
-import { useState, useEffect } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { useState, useEffect, useRef } from 'react';
+import { io } from 'socket.io-client';
 import {
   Box,
-  Card,
-  CardContent,
   Typography,
   Button,
-  Chip,
-  IconButton,
   Alert,
   CircularProgress,
   LinearProgress,
@@ -16,14 +12,18 @@ import {
   DialogContent,
   DialogActions,
 } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import TranscribeIcon from '@mui/icons-material/Subtitles';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ErrorIcon from '@mui/icons-material/Error';
-import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import { recordingsApi, transcriptionsApi } from '../services/api';
 import type { Recording } from '../types';
+import { getErrorMessage } from '../utils/getErrorMessage';
+import { COLORS } from '../theme/theme';
+import { formatDateTime } from '../utils/formatDate';
+
+const fadeUpAnimation = {
+  '@keyframes fadeUp': {
+    from: { opacity: 0, transform: 'translateY(6px)' },
+    to: { opacity: 1, transform: 'translateY(0)' },
+  },
+} as const;
 
 interface RecordingsListProps {
   recordings: Recording[];
@@ -31,82 +31,76 @@ interface RecordingsListProps {
   onTranscriptionComplete: () => void;
 }
 
-export default function RecordingsList({
-  recordings,
-  onRecordingDeleted,
-  onTranscriptionComplete,
-}: RecordingsListProps) {
-  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; recordingId?: number }>({
-    open: false,
-  });
+function StatusBadge({ status }: { status: string }) {
+  const config: Record<string, { label: string; color: string; bg: string }> = {
+    completed: { label: 'Transcribed', color: COLORS.sage, bg: COLORS.sagePale },
+    transcribing: { label: 'Transcribing…', color: '#D97706', bg: '#FEF9C3' },
+    failed: { label: 'Failed', color: COLORS.rose, bg: COLORS.rosePale },
+    pending: { label: 'Pending', color: COLORS.inkFaint, bg: COLORS.divider },
+  };
+  const c = config[status] || config.pending;
+  return (
+    <Box
+      sx={{
+        fontFamily: '"DM Mono", monospace',
+        fontSize: '0.7rem',
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: c.color,
+        backgroundColor: c.bg,
+        px: 1.5,
+        py: 0.4,
+        borderRadius: 3,
+        display: 'inline-block',
+        flexShrink: 0,
+      }}
+    >
+      {c.label}
+    </Box>
+  );
+}
+
+export default function RecordingsList({ recordings, onRecordingDeleted, onTranscriptionComplete }: RecordingsListProps) {
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; recordingId?: number }>({ open: false });
   const [deleting, setDeleting] = useState(false);
   const [transcribing, setTranscribing] = useState<number | null>(null);
-  const [transcriptionProgress, setTranscriptionProgress] = useState<{
-    recordingId: number;
-    progress: number;
-    message: string;
-  } | null>(null);
+  const [transcriptionProgress, setTranscriptionProgress] = useState<{ recordingId: number; progress: number; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [viewDialog, setViewDialog] = useState<{ open: boolean; recording?: Recording; transcription?: string }>({
-    open: false,
-  });
+  const [viewDialog, setViewDialog] = useState<{ open: boolean; recording?: Recording; transcription?: string }>({ open: false });
   const [loadingTranscription, setLoadingTranscription] = useState(false);
-  const [socket, setSocket] = useState<Socket | null>(null);
+  // Stable ref so socket setup runs only once (avoids reconnect on every parent re-render)
+  const onTranscriptionCompleteRef = useRef(onTranscriptionComplete);
+  useEffect(() => { onTranscriptionCompleteRef.current = onTranscriptionComplete; });
 
-  // Setup Socket.IO connection
   useEffect(() => {
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-    const newSocket = io(API_URL);
-
-    newSocket.on('connect', () => {
-      console.log('✅ Connected to Socket.IO');
+    const sock = io(API_URL);
+    sock.on('transcription:progress', (data: { recordingId: number; progress?: number; message?: string }) => {
+      setTranscriptionProgress({ recordingId: data.recordingId, progress: data.progress || 50, message: data.message || 'Transcribing…' });
     });
-
-    newSocket.on('transcription:progress', (data: any) => {
-      console.log('Transcription progress:', data);
-      setTranscriptionProgress({
-        recordingId: data.recordingId,
-        progress: data.progress || 50,
-        message: data.message || 'Transcribing...'
-      });
-    });
-
-    newSocket.on('transcription:complete', (data: any) => {
-      console.log('Transcription complete:', data);
+    sock.on('transcription:complete', () => {
       setTranscriptionProgress(null);
       setTranscribing(null);
-      onTranscriptionComplete();
+      onTranscriptionCompleteRef.current();
     });
-
-    newSocket.on('transcription:error', (data: any) => {
-      console.log('Transcription error:', data);
+    sock.on('transcription:error', (data: { message?: string }) => {
       setTranscriptionProgress(null);
       setTranscribing(null);
       setError(data.message || 'Transcription failed');
-      onTranscriptionComplete();
+      onTranscriptionCompleteRef.current();
     });
-
-    newSocket.on('disconnect', () => {
-      console.log('❌ Disconnected from Socket.IO');
-    });
-
-    setSocket(newSocket);
-
-    return () => {
-      newSocket.close();
-    };
-  }, [onTranscriptionComplete]);
+    return () => { sock.close(); };
+  }, []);
 
   const handleDelete = async () => {
     if (!deleteDialog.recordingId) return;
-
     try {
       setDeleting(true);
       await recordingsApi.delete(deleteDialog.recordingId);
       setDeleteDialog({ open: false });
       onRecordingDeleted();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to delete recording');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to delete recording'));
     } finally {
       setDeleting(false);
     }
@@ -117,14 +111,10 @@ export default function RecordingsList({
       setLoadingTranscription(true);
       const response = await transcriptionsApi.getByRecording(recording.id!);
       if (response.data.success && response.data.data) {
-        setViewDialog({
-          open: true,
-          recording,
-          transcription: response.data.data.formatted_text || response.data.data.raw_text,
-        });
+        setViewDialog({ open: true, recording, transcription: response.data.data.formatted_text || response.data.data.raw_text });
       }
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load transcription');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to load transcription'));
     } finally {
       setLoadingTranscription(false);
     }
@@ -134,17 +124,10 @@ export default function RecordingsList({
     try {
       setTranscribing(recordingId);
       setError(null);
-      setTranscriptionProgress({
-        recordingId,
-        progress: 5,
-        message: 'Initializing transcription...'
-      });
-
+      setTranscriptionProgress({ recordingId, progress: 5, message: 'Starting…' });
       await transcriptionsApi.start(recordingId);
-
-      // Socket.IO will handle the progress updates
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to start transcription');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to start transcription'));
       setTranscribing(null);
       setTranscriptionProgress(null);
     }
@@ -153,49 +136,8 @@ export default function RecordingsList({
   const formatFileSize = (bytes?: number) => {
     if (!bytes) return '0 B';
     const kb = bytes / 1024;
-    if (kb < 1024) return `${kb.toFixed(1)} KB`;
-    return `${(kb / 1024).toFixed(1)} MB`;
+    return kb < 1024 ? `${kb.toFixed(1)} KB` : `${(kb / 1024).toFixed(1)} MB`;
   };
-
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '';
-    // SQLite stores UTC timestamps without 'Z' suffix, so we need to add it
-    const isoString = dateString.includes('Z') ? dateString : dateString + 'Z';
-    const date = new Date(isoString);
-    return date.toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    });
-  };
-
-  const getStatusChip = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return <Chip icon={<CheckCircleIcon />} label="Transcribed" color="success" />;
-      case 'transcribing':
-        return <Chip icon={<HourglassEmptyIcon />} label="Transcribing..." color="warning" />;
-      case 'failed':
-        return <Chip icon={<ErrorIcon />} label="Failed" color="error" />;
-      default:
-        return <Chip label="Pending" color="default" />;
-    }
-  };
-
-  if (recordings.length === 0) {
-    return (
-      <Card>
-        <CardContent sx={{ textAlign: 'center', py: 6 }}>
-          <Typography variant="h6" color="text.secondary">
-            No recordings yet. Start by recording or uploading an audio file.
-          </Typography>
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <Box>
@@ -205,64 +147,96 @@ export default function RecordingsList({
         </Alert>
       )}
 
-      {recordings.map((recording) => (
-        <Card key={recording.id} sx={{ mb: 2 }}>
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', mb: 2 }}>
-              <Box sx={{ flexGrow: 1 }}>
-                <Typography variant="h6" gutterBottom>
-                  {recording.filename}
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {recordings.map((recording, i) => (
+          <Box
+            key={recording.id}
+            sx={{
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: '8px',
+              backgroundColor: COLORS.cream,
+              p: 3,
+              animation: `fadeUp 0.25s ease ${i * 0.04}s both`,
+              ...fadeUpAnimation,
+            }}
+          >
+            {/* Row 1: filename + status + delete */}
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 1.5 }}>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography
+                  sx={{
+                    fontWeight: 500,
+                    fontSize: '1rem',
+                    color: COLORS.ink,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {recording.original_filename || recording.filename}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {formatFileSize(recording.file_size)} • {formatDate(recording.created_at)}
+                <Typography
+                  sx={{
+                    fontFamily: '"DM Mono", monospace',
+                    fontSize: '0.75rem',
+                    color: COLORS.inkFaint,
+                    mt: 0.25,
+                  }}
+                >
+                  {formatFileSize(recording.file_size)} · {formatDateTime(recording.created_at)}
                 </Typography>
               </Box>
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                {getStatusChip(recording.status)}
-                <IconButton
-                  color="error"
-                  onClick={() => setDeleteDialog({ open: true, recordingId: recording.id })}
-                  size="large"
-                >
-                  <DeleteIcon />
-                </IconButton>
+              <StatusBadge status={recording.status} />
+              <Box
+                onClick={() => setDeleteDialog({ open: true, recordingId: recording.id })}
+                sx={{
+                  cursor: 'pointer',
+                  color: COLORS.inkFaint,
+                  lineHeight: 0,
+                  p: 0.5,
+                  borderRadius: '4px',
+                  '&:hover': { color: COLORS.rose, backgroundColor: COLORS.rosePale },
+                  transition: 'all 0.15s',
+                  flexShrink: 0,
+                }}
+                title="Delete recording"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M2 4h12M5 4V2.5a.5.5 0 01.5-.5h5a.5.5 0 01.5.5V4M6 7v5M10 7v5M3 4l.8 9.5a.5.5 0 00.5.5h7.4a.5.5 0 00.5-.5L13 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
               </Box>
             </Box>
 
+            {/* Actions */}
             {recording.status === 'pending' && (
               <Button
-                variant="contained"
-                startIcon={
-                  transcribing === recording.id ? (
-                    <CircularProgress size={20} color="inherit" />
-                  ) : (
-                    <TranscribeIcon />
-                  )
-                }
+                size="small"
+                variant="outlined"
                 onClick={() => handleTranscribe(recording.id!)}
                 disabled={transcribing !== null}
-                size="large"
+                sx={{ fontSize: '0.875rem' }}
               >
-                {transcribing === recording.id ? 'Starting Transcription...' : 'Start Transcription'}
+                {transcribing === recording.id ? (
+                  <><CircularProgress size={14} sx={{ mr: 1 }} />Starting…</>
+                ) : 'Transcribe'}
               </Button>
             )}
 
-            {(recording.status === 'transcribing' || (transcriptionProgress && transcriptionProgress.recordingId === recording.id)) && (
-              <Box sx={{ width: '100%' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                  <CircularProgress size={24} />
-                  <Typography variant="body1" sx={{ fontSize: '1.125rem' }}>
-                    {transcriptionProgress?.message || 'Transcription in progress...'}
+            {(recording.status === 'transcribing' || (transcriptionProgress?.recordingId === recording.id)) && (
+              <Box sx={{ mt: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+                  <CircularProgress size={16} />
+                  <Typography sx={{ fontSize: '0.9rem', color: COLORS.inkLight }}>
+                    {transcriptionProgress?.message || 'Transcribing…'}
                   </Typography>
                 </Box>
                 <LinearProgress
                   variant={transcriptionProgress?.progress ? 'determinate' : 'indeterminate'}
                   value={transcriptionProgress?.progress || 0}
-                  sx={{ height: 8, borderRadius: 4 }}
                 />
                 {transcriptionProgress?.progress && (
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontSize: '1rem' }}>
-                    {transcriptionProgress.progress}% complete
+                  <Typography sx={{ fontFamily: '"DM Mono", monospace', fontSize: '0.72rem', color: COLORS.inkFaint, mt: 0.5 }}>
+                    {transcriptionProgress.progress}%
                   </Typography>
                 )}
               </Box>
@@ -270,99 +244,108 @@ export default function RecordingsList({
 
             {recording.status === 'completed' && (
               <Button
+                size="small"
                 variant="outlined"
-                startIcon={loadingTranscription ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />}
                 onClick={() => handleViewTranscription(recording)}
                 disabled={loadingTranscription}
-                size="large"
+                sx={{ fontSize: '0.875rem' }}
               >
-                {loadingTranscription ? 'Loading...' : 'View Transcription'}
+                {loadingTranscription ? <CircularProgress size={14} sx={{ mr: 1 }} /> : null}
+                View transcription
               </Button>
             )}
 
             {recording.status === 'failed' && (
               <Box>
-                <Alert severity="error" sx={{ mb: 2 }}>
-                  Transcription failed. You can try again or delete this recording.
+                <Alert severity="error" sx={{ mb: 1.5, py: 0.5 }}>
+                  Transcription failed — you can retry or delete this recording.
                 </Alert>
                 <Button
-                  variant="contained"
-                  startIcon={
-                    transcribing === recording.id ? (
-                      <CircularProgress size={20} color="inherit" />
-                    ) : (
-                      <TranscribeIcon />
-                    )
-                  }
+                  size="small"
+                  variant="outlined"
                   onClick={() => handleTranscribe(recording.id!)}
                   disabled={transcribing !== null}
-                  size="large"
+                  sx={{ fontSize: '0.875rem' }}
                 >
-                  {transcribing === recording.id ? 'Starting Transcription...' : 'Retry Transcription'}
+                  Retry
                 </Button>
               </Box>
             )}
-          </CardContent>
-        </Card>
-      ))}
+          </Box>
+        ))}
+      </Box>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete dialog */}
       <Dialog open={deleteDialog.open} onClose={() => !deleting && setDeleteDialog({ open: false })}>
-        <DialogTitle>
-          <Typography variant="h5">Delete Recording?</Typography>
-        </DialogTitle>
+        <DialogTitle>Delete this recording?</DialogTitle>
         <DialogContent>
-          <Typography variant="body1">
-            Are you sure you want to delete this recording? This action cannot be undone.
+          <Typography variant="body1" sx={{ color: COLORS.inkLight }}>
+            This cannot be undone. The audio file and any transcription will be permanently removed.
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ p: 3 }}>
-          <Button onClick={() => setDeleteDialog({ open: false })} disabled={deleting} size="large">
+        <DialogActions>
+          <Button variant="outlined" onClick={() => setDeleteDialog({ open: false })} disabled={deleting}>
             Cancel
           </Button>
           <Button
             onClick={handleDelete}
-            color="error"
-            variant="contained"
             disabled={deleting}
-            size="large"
+            sx={{
+              backgroundColor: COLORS.rose,
+              color: '#fff',
+              '&:hover': { backgroundColor: '#9F1239' },
+            }}
           >
-            {deleting ? <CircularProgress size={24} /> : 'Delete'}
+            {deleting ? <CircularProgress size={18} sx={{ color: '#fff' }} /> : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* View Transcription Dialog */}
-      <Dialog
-        open={viewDialog.open}
-        onClose={() => setViewDialog({ open: false })}
-        maxWidth="md"
-        fullWidth
-      >
+      {/* View transcription dialog */}
+      <Dialog open={viewDialog.open} onClose={() => setViewDialog({ open: false })} maxWidth="md" fullWidth>
         <DialogTitle>
-          <Typography variant="h5">Transcription</Typography>
+          Transcription
           {viewDialog.recording && (
-            <Typography variant="body2" color="text.secondary">
-              {viewDialog.recording.filename}
+            <Typography
+              variant="body2"
+              sx={{
+                fontFamily: '"DM Mono", monospace',
+                fontSize: '0.78rem',
+                color: COLORS.inkFaint,
+                mt: 0.25,
+              }}
+            >
+              {viewDialog.recording.original_filename || viewDialog.recording.filename}
             </Typography>
           )}
         </DialogTitle>
         <DialogContent>
-          <Box sx={{
-            p: 3,
-            bgcolor: 'grey.50',
-            borderRadius: 1,
-            minHeight: 200,
-            maxHeight: 500,
-            overflow: 'auto'
-          }}>
-            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', fontSize: '1.125rem', lineHeight: 1.8 }}>
+          <Box
+            sx={{
+              p: 3,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: '8px',
+              backgroundColor: '#FFFDF9',
+              minHeight: 180,
+              maxHeight: 460,
+              overflow: 'auto',
+            }}
+          >
+            <Typography
+              sx={{
+                whiteSpace: 'pre-wrap',
+                fontSize: '1.0625rem',
+                lineHeight: 1.85,
+                fontFamily: 'Georgia, serif',
+                color: COLORS.ink,
+              }}
+            >
               {viewDialog.transcription || 'No transcription available'}
             </Typography>
           </Box>
         </DialogContent>
-        <DialogActions sx={{ p: 3 }}>
-          <Button onClick={() => setViewDialog({ open: false })} variant="contained" size="large">
+        <DialogActions>
+          <Button variant="contained" onClick={() => setViewDialog({ open: false })}>
             Close
           </Button>
         </DialogActions>

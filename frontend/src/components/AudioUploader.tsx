@@ -1,14 +1,9 @@
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import {
-  Box,
-  Typography,
-  Alert,
-  LinearProgress,
-  Paper,
-} from '@mui/material';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import { Box, Typography, Alert, LinearProgress } from '@mui/material';
 import { recordingsApi } from '../services/api';
+import { getErrorMessage } from '../utils/getErrorMessage';
+import { COLORS } from '../theme/theme';
 
 interface AudioUploaderProps {
   projectId: number;
@@ -24,33 +19,23 @@ export default function AudioUploader({ projectId, language, onUploadComplete }:
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
-
     const file = acceptedFiles[0];
-
     try {
       setUploading(true);
       setError(null);
       setSuccess(null);
       setUploadProgress(0);
-
-      // Simulate progress (axios upload progress can be added)
       const progressInterval = setInterval(() => {
         setUploadProgress((prev) => Math.min(prev + 10, 90));
       }, 200);
-
       await recordingsApi.upload(projectId, file, language);
-
       clearInterval(progressInterval);
       setUploadProgress(100);
-      setSuccess(`Successfully uploaded: ${file.name}`);
+      setSuccess(`Uploaded: ${file.name}`);
       onUploadComplete();
-
-      setTimeout(() => {
-        setSuccess(null);
-        setUploadProgress(0);
-      }, 3000);
-    } catch (err: any) {
-      setError(err.response?.data?.error || err.message || 'Upload failed');
+      setTimeout(() => { setSuccess(null); setUploadProgress(0); }, 3000);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Upload failed'));
     } finally {
       setUploading(false);
     }
@@ -66,73 +51,88 @@ export default function AudioUploader({ projectId, language, onUploadComplete }:
       'audio/webm': ['.webm'],
     },
     maxFiles: 1,
-    maxSize: 100 * 1024 * 1024, // 100MB
+    maxSize: 100 * 1024 * 1024,
     disabled: uploading,
   });
 
   return (
     <Box>
-      <Typography variant="h5" gutterBottom>
-        Upload Audio File
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Drag and drop an audio file, or click to browse
-      </Typography>
-
       {error && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
-
       {success && (
         <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>
           {success}
         </Alert>
       )}
 
-      <Paper
+      <Box
         {...getRootProps()}
         sx={{
-          p: 6,
-          border: '3px dashed',
-          borderColor: isDragActive ? 'primary.main' : 'grey.400',
-          backgroundColor: isDragActive ? 'action.hover' : 'background.paper',
+          border: `2px dashed ${isDragActive ? COLORS.gold : COLORS.border}`,
+          borderRadius: '10px',
+          backgroundColor: isDragActive ? COLORS.goldPale : '#FFFDF9',
           cursor: uploading ? 'not-allowed' : 'pointer',
           textAlign: 'center',
-          transition: 'all 0.3s',
+          p: { xs: 4, md: 7 },
+          transition: 'all 0.2s ease',
           '&:hover': uploading ? {} : {
-            borderColor: 'primary.main',
-            backgroundColor: 'action.hover',
+            borderColor: COLORS.gold,
+            backgroundColor: COLORS.goldPale,
           },
         }}
       >
         <input {...getInputProps()} />
-        <CloudUploadIcon sx={{ fontSize: '5rem', color: 'primary.main', mb: 2 }} />
+
+        {/* Cloud upload icon */}
+        <Box sx={{ mb: 2, opacity: isDragActive ? 0.9 : 0.4 }}>
+          <svg width="52" height="40" viewBox="0 0 52 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M26 28V10M26 10L20 16M26 10L32 16" stroke={COLORS.ink} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M14 32C8.477 32 4 27.523 4 22C4 17.029 7.693 12.9 12.5 12.1C13.867 7.42 18.124 4 23.2 4C29.627 4 34.8 9.173 34.8 15.6C34.8 15.733 34.797 15.867 34.79 16C39.399 16.463 43 20.316 43 25C43 30.523 38.523 35 33 35" stroke={COLORS.ink} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </Box>
+
         {isDragActive ? (
-          <Typography variant="h5" color="primary">
-            Drop the audio file here
+          <Typography variant="h5" sx={{ color: COLORS.gold }}>
+            Drop it here
+          </Typography>
+        ) : uploading ? (
+          <Typography variant="body1" sx={{ color: COLORS.inkLight }}>
+            Uploading…
           </Typography>
         ) : (
           <>
-            <Typography variant="h5" gutterBottom>
-              {uploading ? 'Uploading...' : 'Drop audio file here'}
+            <Typography variant="h6" sx={{ mb: 0.5, fontFamily: '"DM Sans", sans-serif', fontWeight: 500, color: COLORS.ink }}>
+              Drop an audio file here
             </Typography>
-            <Typography variant="body1" color="text.secondary">
-              or click to browse
+            <Typography variant="body2" sx={{ color: COLORS.inkFaint }}>
+              or click to browse your files
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-              Supported formats: MP3, M4A, WAV, OGG, WebM (max 100MB)
+            <Typography
+              sx={{
+                mt: 2,
+                fontFamily: '"DM Mono", monospace',
+                fontSize: '0.72rem',
+                letterSpacing: '0.06em',
+                color: COLORS.inkFaint,
+                textTransform: 'uppercase',
+              }}
+            >
+              MP3 · M4A · WAV · OGG · WebM · max 100 MB
             </Typography>
           </>
         )}
-      </Paper>
+      </Box>
 
       {uploading && (
-        <Box sx={{ mt: 3 }}>
+        <Box sx={{ mt: 2 }}>
           <LinearProgress variant="determinate" value={uploadProgress} />
-          <Typography variant="body2" color="text.secondary" align="center" sx={{ mt: 1 }}>
-            Uploading... {uploadProgress}%
+          <Typography
+            sx={{ mt: 0.75, fontFamily: '"DM Mono", monospace', fontSize: '0.8rem', color: COLORS.inkFaint, textAlign: 'center' }}
+          >
+            {uploadProgress}%
           </Typography>
         </Box>
       )}

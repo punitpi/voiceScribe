@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -7,9 +7,6 @@ import {
   Button,
   Alert,
   CircularProgress,
-  Paper,
-  Breadcrumbs,
-  Link,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -17,13 +14,12 @@ import {
   DialogContentText,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import MergeIcon from '@mui/icons-material/Merge';
-import AddIcon from '@mui/icons-material/Add';
-import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import { projectsApi, documentsApi, pdfsApi } from '../services/api';
 import type { Project, Document, PDFSettings } from '../types';
+import { getErrorMessage } from '../utils/getErrorMessage';
 import TextEditor from '../components/TextEditor';
 import PDFSettingsDialog from '../components/PDFSettingsDialog';
+import { COLORS } from '../theme/theme';
 
 export default function DocumentPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -41,116 +37,69 @@ export default function DocumentPage() {
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [pdfSuccess, setPdfSuccess] = useState<string | null>(null);
 
-  // Auto-dismiss success messages after 10 seconds
-  useEffect(() => {
-    if (combineSuccess) {
-      const timer = setTimeout(() => {
-        setCombineSuccess(null);
-      }, 10000);
-      return () => clearTimeout(timer);
-    }
-  }, [combineSuccess]);
+  const autoDismiss = useCallback((setter: (v: null) => void, ms = 10000) => {
+    const t = setTimeout(() => setter(null), ms);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => { if (combineSuccess) return autoDismiss(setCombineSuccess); }, [combineSuccess, autoDismiss]);
+  useEffect(() => { if (appendSuccess) return autoDismiss(setAppendSuccess); }, [appendSuccess, autoDismiss]);
+  useEffect(() => { if (pdfSuccess) return autoDismiss(setPdfSuccess); }, [pdfSuccess, autoDismiss]);
 
   useEffect(() => {
-    if (appendSuccess) {
-      const timer = setTimeout(() => {
-        setAppendSuccess(null);
-      }, 10000);
-      return () => clearTimeout(timer);
-    }
-  }, [appendSuccess]);
-
-  useEffect(() => {
-    if (pdfSuccess) {
-      const timer = setTimeout(() => {
-        setPdfSuccess(null);
-      }, 10000);
-      return () => clearTimeout(timer);
-    }
-  }, [pdfSuccess]);
-
-  // Fetch project and document
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!projectId) return;
-
+    if (!projectId) return;
+    const fetch = async () => {
       try {
         setLoading(true);
-        setError(null);
-
-        // Fetch project
-        const projectRes = await projectsApi.getById(Number(projectId));
-        if (projectRes.data.success && projectRes.data.data) {
-          setProject(projectRes.data.data);
-        }
-
-        // Fetch document
-        const docRes = await documentsApi.getByProject(Number(projectId));
-        if (docRes.data.success && docRes.data.data) {
-          setDocument(docRes.data.data);
-        }
-      } catch (err: any) {
-        console.error('Error fetching data:', err);
-        setError(err.response?.data?.error || 'Failed to load document');
+        const [projectRes, docRes] = await Promise.all([
+          projectsApi.getById(Number(projectId)),
+          documentsApi.getByProject(Number(projectId)),
+        ]);
+        if (projectRes.data.success && projectRes.data.data) setProject(projectRes.data.data);
+        if (docRes.data.success && docRes.data.data) setDocument(docRes.data.data);
+      } catch (err: unknown) {
+        setError(getErrorMessage(err, 'Failed to load document'));
       } finally {
         setLoading(false);
       }
     };
-
-    fetchData();
+    fetch();
   }, [projectId]);
 
   const handleSave = async (content: string) => {
     if (!projectId) return;
-
-    try {
-      const response = await documentsApi.update(Number(projectId), content);
-      if (response.data.success && response.data.data) {
-        setDocument(response.data.data);
-      }
-    } catch (err: any) {
-      throw new Error(err.response?.data?.error || 'Failed to save document');
-    }
+    const response = await documentsApi.update(Number(projectId), content);
+    if (response.data.success && response.data.data) setDocument(response.data.data);
   };
 
-  const handleCombineTranscriptions = async () => {
+  const handleCombine = async () => {
     if (!projectId) return;
-
     try {
       setCombining(true);
-      setCombineSuccess(null);
-      setError(null);
       setCombineConfirmOpen(false);
-
       const response = await documentsApi.combineTranscriptions(Number(projectId));
       if (response.data.success && response.data.data) {
         setDocument(response.data.data);
-        setCombineSuccess(response.data.message || 'Transcriptions combined successfully');
+        setCombineSuccess(response.data.message || 'All transcriptions combined');
       }
-    } catch (err: any) {
-      console.error('Error combining transcriptions:', err);
-      setError(err.response?.data?.error || 'Failed to combine transcriptions');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to combine transcriptions'));
     } finally {
       setCombining(false);
     }
   };
 
-  const handleAppendNewTranscriptions = async () => {
+  const handleAppend = async () => {
     if (!projectId) return;
-
     try {
       setAppending(true);
-      setAppendSuccess(null);
-      setError(null);
-
       const response = await documentsApi.appendNewTranscriptions(Number(projectId));
       if (response.data.success && response.data.data) {
         setDocument(response.data.data);
-        setAppendSuccess(response.data.message || 'New transcriptions appended successfully');
+        setAppendSuccess(response.data.message || 'New transcriptions appended');
       }
-    } catch (err: any) {
-      console.error('Error appending transcriptions:', err);
-      setError(err.response?.data?.error || 'No new transcriptions to append');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'No new transcriptions to append'));
     } finally {
       setAppending(false);
     }
@@ -158,18 +107,12 @@ export default function DocumentPage() {
 
   const handleGeneratePDF = async (settings: Partial<PDFSettings>) => {
     if (!document?.id) return;
-
     try {
       setGeneratingPDF(true);
-      setPdfSuccess(null);
-      setError(null);
-
       const response = await pdfsApi.generate(document.id, settings);
       if (response.data.success && response.data.data) {
-        setPdfSuccess('PDF generated successfully! Downloading...');
+        setPdfSuccess('PDF ready — downloading…');
         setPdfDialogOpen(false);
-
-        // Trigger download
         const downloadResponse = await pdfsApi.download(response.data.data.id!);
         const url = window.URL.createObjectURL(new Blob([downloadResponse.data]));
         const link = window.document.createElement('a');
@@ -180,9 +123,8 @@ export default function DocumentPage() {
         link.remove();
         window.URL.revokeObjectURL(url);
       }
-    } catch (err: any) {
-      console.error('Error generating PDF:', err);
-      setError(err.response?.data?.error || 'Failed to generate PDF');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to generate PDF'));
       setPdfDialogOpen(false);
     } finally {
       setGeneratingPDF(false);
@@ -191,9 +133,9 @@ export default function DocumentPage() {
 
   if (loading) {
     return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress size={48} />
+      <Container maxWidth="lg" sx={{ py: 6 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+          <CircularProgress size={40} />
         </Box>
       </Container>
     );
@@ -202,127 +144,109 @@ export default function DocumentPage() {
   if (error && !document) {
     return (
       <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Alert severity="error">{error}</Alert>
-        <Button
-          variant="contained"
-          startIcon={<ArrowBackIcon />}
-          onClick={() => navigate(`/project/${projectId}`)}
-          sx={{ mt: 2, minHeight: 48 }}
-        >
-          Back to Project
+        <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>
+        <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate(`/project/${projectId}`)}>
+          Back to project
         </Button>
       </Container>
     );
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      {/* Breadcrumbs */}
-      <Breadcrumbs sx={{ mb: 3 }}>
-        <Link
-          component="button"
-          variant="body1"
+    <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
+      {/* Breadcrumb */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', mb: 4 }}>
+        <Box
           onClick={() => navigate('/')}
-          sx={{ cursor: 'pointer', fontSize: '1.125rem' }}
+          sx={{ cursor: 'pointer', color: COLORS.inkFaint, fontSize: '0.875rem', '&:hover': { color: COLORS.gold } }}
         >
-          Dashboard
-        </Link>
-        <Link
-          component="button"
-          variant="body1"
+          Library
+        </Box>
+        <Box sx={{ color: COLORS.border, fontSize: '0.875rem' }}>/</Box>
+        <Box
           onClick={() => navigate(`/project/${projectId}`)}
-          sx={{ cursor: 'pointer', fontSize: '1.125rem' }}
+          sx={{ cursor: 'pointer', color: COLORS.inkFaint, fontSize: '0.875rem', '&:hover': { color: COLORS.gold } }}
         >
           {project?.title || 'Project'}
-        </Link>
-        <Typography color="text.primary" sx={{ fontSize: '1.125rem' }}>
-          Document
-        </Typography>
-      </Breadcrumbs>
+        </Box>
+        <Box sx={{ color: COLORS.border, fontSize: '0.875rem' }}>/</Box>
+        <Box sx={{ color: COLORS.ink, fontSize: '0.875rem' }}>Document</Box>
+      </Box>
 
       {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" component="h1">
-          Edit Document
-        </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 3, mb: 4, flexWrap: 'wrap' }}>
+        <Box>
+          <Typography variant="h3" sx={{ fontStyle: 'italic', mb: 0.5 }}>
+            {project?.title || 'Document'}
+          </Typography>
+          {project?.author_name && (
+            <Typography variant="body2" sx={{ color: COLORS.inkFaint }}>by {project.author_name}</Typography>
+          )}
+        </Box>
 
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+        {/* Action buttons */}
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
           <Button
-            variant="contained"
-            color="success"
-            startIcon={<PictureAsPdfIcon />}
-            onClick={() => setPdfDialogOpen(true)}
-            size="large"
+            variant="outlined"
+            size="small"
+            onClick={() => navigate(`/project/${projectId}`)}
+            startIcon={<ArrowBackIcon sx={{ fontSize: '0.9rem !important' }} />}
           >
-            Generate PDF
-          </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={appending ? <CircularProgress size={20} color="inherit" /> : <AddIcon />}
-            onClick={handleAppendNewTranscriptions}
-            disabled={appending}
-            size="large"
-          >
-            {appending ? 'Adding...' : 'Add New Transcriptions'}
+            Back
           </Button>
           <Button
             variant="outlined"
-            color="warning"
-            startIcon={combining ? <CircularProgress size={20} color="inherit" /> : <MergeIcon />}
+            size="small"
+            onClick={handleAppend}
+            disabled={appending}
+            startIcon={appending ? <CircularProgress size={14} /> : undefined}
+          >
+            {appending ? 'Adding…' : 'Add new transcriptions'}
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
             onClick={() => setCombineConfirmOpen(true)}
             disabled={combining}
-            size="large"
+            sx={{ borderColor: '#D97706', color: '#D97706', '&:hover': { borderColor: '#92400E', color: '#92400E', backgroundColor: COLORS.goldPale } }}
           >
-            {combining ? 'Combining...' : 'Replace All (Combine)'}
+            Replace all
           </Button>
           <Button
-            variant="outlined"
-            startIcon={<ArrowBackIcon />}
-            onClick={() => navigate(`/project/${projectId}`)}
-            size="large"
+            variant="contained"
+            size="small"
+            onClick={() => setPdfDialogOpen(true)}
           >
-            Back to Project
+            Export PDF
           </Button>
         </Box>
       </Box>
 
-      {/* Success messages */}
-      {combineSuccess && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setCombineSuccess(null)}>
-          {combineSuccess}
-        </Alert>
-      )}
-      {appendSuccess && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setAppendSuccess(null)}>
-          {appendSuccess}
-        </Alert>
-      )}
-      {pdfSuccess && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setPdfSuccess(null)}>
-          {pdfSuccess}
-        </Alert>
-      )}
+      {/* Notifications */}
+      {combineSuccess && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setCombineSuccess(null)}>{combineSuccess}</Alert>}
+      {appendSuccess && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setAppendSuccess(null)}>{appendSuccess}</Alert>}
+      {pdfSuccess && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setPdfSuccess(null)}>{pdfSuccess}</Alert>}
+      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
 
-      {/* Error message */}
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-
-      {/* Info */}
-      <Paper sx={{ p: 2, mb: 3, bgcolor: 'info.light', color: 'info.contrastText' }}>
-        <Typography variant="body1" sx={{ mb: 1 }}>
-          <strong>Auto-save:</strong> Your changes are automatically saved every few seconds.
+      {/* Info tip */}
+      <Box
+        sx={{
+          mb: 3,
+          p: 2,
+          border: `1px solid ${COLORS.divider}`,
+          borderRadius: '6px',
+          backgroundColor: COLORS.goldPale,
+          display: 'flex',
+          gap: 2,
+          alignItems: 'flex-start',
+        }}
+      >
+        <Typography sx={{ fontSize: '0.875rem', color: COLORS.inkLight, lineHeight: 1.6 }}>
+          <strong>Auto-save</strong> is on — changes save every few seconds. &nbsp;
+          <strong>Add new transcriptions</strong> appends only new recordings (preserves your edits). &nbsp;
+          <strong>Replace all</strong> overwrites everything with all transcriptions.
         </Typography>
-        <Typography variant="body1" sx={{ mb: 1 }}>
-          <strong>Add New Transcriptions:</strong> Appends only new transcriptions to your existing content (preserves your edits).
-        </Typography>
-        <Typography variant="body1">
-          <strong>Replace All (Combine):</strong> Replaces everything with all transcriptions (⚠️ overwrites your edits).
-        </Typography>
-      </Paper>
+      </Box>
 
       {/* Editor */}
       {document && (
@@ -335,48 +259,27 @@ export default function DocumentPage() {
         />
       )}
 
-      {/* Combine Transcriptions Confirmation Dialog */}
-      <Dialog
-        open={combineConfirmOpen}
-        onClose={() => setCombineConfirmOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>
-          <Typography variant="h5">⚠️ Warning: This Will Overwrite Your Document</Typography>
-        </DialogTitle>
+      {/* Combine confirm */}
+      <Dialog open={combineConfirmOpen} onClose={() => setCombineConfirmOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Replace all document content?</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ fontSize: '1.125rem', lineHeight: 1.6 }}>
-            Combining transcriptions will <strong>replace all current content</strong> in your document
-            with the transcriptions from your recordings.
-            <br />
-            <br />
-            Any manual changes you've made will be <strong>permanently lost</strong>.
-            <br />
-            <br />
-            Are you sure you want to continue?
+          <DialogContentText sx={{ fontSize: '1rem', lineHeight: 1.7, color: COLORS.inkLight }}>
+            This will <strong>replace everything in your document</strong> with all transcriptions from your recordings.
+            Any manual edits will be permanently lost.
           </DialogContentText>
         </DialogContent>
-        <DialogActions sx={{ p: 3 }}>
+        <DialogActions>
+          <Button variant="outlined" onClick={() => setCombineConfirmOpen(false)}>Cancel</Button>
           <Button
-            onClick={() => setCombineConfirmOpen(false)}
-            variant="outlined"
-            size="large"
+            onClick={handleCombine}
+            sx={{ backgroundColor: '#D97706', color: '#fff', '&:hover': { backgroundColor: '#92400E' } }}
           >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleCombineTranscriptions}
-            variant="contained"
-            color="warning"
-            size="large"
-          >
-            Yes, Replace Content
+            Yes, replace content
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* PDF Settings Dialog */}
+      {/* PDF dialog */}
       <PDFSettingsDialog
         open={pdfDialogOpen}
         onClose={() => setPdfDialogOpen(false)}

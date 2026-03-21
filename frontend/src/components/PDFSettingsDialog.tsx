@@ -15,8 +15,10 @@ import {
   Box,
   Typography,
   Divider,
+  CircularProgress,
 } from '@mui/material';
 import type { PDFSettings } from '../types';
+import { COLORS } from '../theme/theme';
 
 interface PDFSettingsDialogProps {
   open: boolean;
@@ -25,12 +27,7 @@ interface PDFSettingsDialogProps {
   generating: boolean;
 }
 
-export default function PDFSettingsDialog({
-  open,
-  onClose,
-  onGenerate,
-  generating,
-}: PDFSettingsDialogProps) {
+export default function PDFSettingsDialog({ open, onClose, onGenerate, generating }: PDFSettingsDialogProps) {
   const [settings, setSettings] = useState<Partial<PDFSettings>>({
     pageSize: 'A4',
     fontSize: 12,
@@ -39,122 +36,114 @@ export default function PDFSettingsDialog({
     includePageNumbers: true,
   });
 
-  const handleGenerate = () => {
-    onGenerate(settings);
+  const labelSx = {
+    fontFamily: '"DM Mono", monospace',
+    fontSize: '0.7rem',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase' as const,
+    color: COLORS.inkFaint,
+    mb: 1.5,
+    display: 'block',
   };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>
-        <Typography variant="h5">PDF Settings</Typography>
-      </DialogTitle>
-      <DialogContent>
-        <Box sx={{ py: 2 }}>
+      <DialogTitle>Export to PDF</DialogTitle>
+      <DialogContent sx={{ pt: '16px !important' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {/* Page Size */}
-          <FormControl component="fieldset" fullWidth sx={{ mb: 3 }}>
-            <FormLabel component="legend" sx={{ fontSize: '1.125rem', mb: 1 }}>
-              Page Size
-            </FormLabel>
+          <FormControl component="fieldset" fullWidth>
+            <FormLabel component="legend" sx={labelSx}>Page size</FormLabel>
             <RadioGroup
+              row
               value={settings.pageSize}
               onChange={(e) => setSettings({ ...settings, pageSize: e.target.value as 'A4' | 'Letter' })}
+              sx={{ gap: 3 }}
             >
-              <FormControlLabel
-                value="A4"
-                control={<Radio size="medium" />}
-                label={<Typography sx={{ fontSize: '1.125rem' }}>A4 (Standard)</Typography>}
-              />
-              <FormControlLabel
-                value="Letter"
-                control={<Radio size="medium" />}
-                label={<Typography sx={{ fontSize: '1.125rem' }}>Letter (US)</Typography>}
-              />
+              {['A4', 'Letter'].map((v) => (
+                <FormControlLabel
+                  key={v}
+                  value={v}
+                  control={<Radio size="small" sx={{ '&.Mui-checked': { color: COLORS.gold } }} />}
+                  label={<Typography sx={{ fontSize: '0.975rem', color: COLORS.inkLight }}>{v}</Typography>}
+                />
+              ))}
             </RadioGroup>
           </FormControl>
 
-          <Divider sx={{ my: 3 }} />
+          <Divider />
 
           {/* Font Size */}
-          <FormControl component="fieldset" fullWidth sx={{ mb: 3 }}>
-            <FormLabel component="legend" sx={{ fontSize: '1.125rem', mb: 2 }}>
-              Font Size: {settings.fontSize}pt
-            </FormLabel>
-            <Box sx={{ px: 2 }}>
-              <Slider
-                value={settings.fontSize}
-                onChange={(_, value) => setSettings({ ...settings, fontSize: value as number })}
-                min={10}
-                max={14}
-                step={1}
-                marks={[
-                  { value: 10, label: '10pt' },
-                  { value: 12, label: '12pt' },
-                  { value: 14, label: '14pt' },
-                ]}
-                valueLabelDisplay="auto"
-              />
-            </Box>
+          <FormControl component="fieldset" fullWidth>
+            <Typography sx={labelSx}>
+              Font size — {settings.fontSize}pt
+            </Typography>
+            <Slider
+              value={settings.fontSize}
+              onChange={(_, value) => setSettings({ ...settings, fontSize: value as number })}
+              min={10} max={14} step={1}
+              marks={[{ value: 10, label: '10' }, { value: 12, label: '12' }, { value: 14, label: '14' }]}
+              valueLabelDisplay="auto"
+              sx={{
+                color: COLORS.gold,
+                '& .MuiSlider-markLabel': { fontSize: '0.78rem', color: COLORS.inkFaint },
+                '& .MuiSlider-thumb': { backgroundColor: COLORS.gold },
+                '& .MuiSlider-track': { backgroundColor: COLORS.gold, border: 'none' },
+                '& .MuiSlider-rail': { backgroundColor: COLORS.border },
+              }}
+            />
           </FormControl>
 
-          <Divider sx={{ my: 3 }} />
+          <Divider />
 
           {/* Line Spacing */}
-          <FormControl component="fieldset" fullWidth sx={{ mb: 3 }}>
-            <FormLabel component="legend" sx={{ fontSize: '1.125rem', mb: 1 }}>
-              Line Spacing
-            </FormLabel>
+          <FormControl component="fieldset" fullWidth>
+            <FormLabel component="legend" sx={labelSx}>Line spacing</FormLabel>
             <RadioGroup
+              row
               value={settings.lineSpacing}
               onChange={(e) => setSettings({ ...settings, lineSpacing: parseFloat(e.target.value) })}
+              sx={{ gap: 3 }}
             >
-              <FormControlLabel
-                value={1.5}
-                control={<Radio size="medium" />}
-                label={<Typography sx={{ fontSize: '1.125rem' }}>1.5 (Standard)</Typography>}
-              />
-              <FormControlLabel
-                value={2.0}
-                control={<Radio size="medium" />}
-                label={<Typography sx={{ fontSize: '1.125rem' }}>2.0 (Double Spaced)</Typography>}
-              />
+              {[{ v: 1.5, label: '1.5 — Standard' }, { v: 2.0, label: '2.0 — Double' }].map(({ v, label }) => (
+                <FormControlLabel
+                  key={v}
+                  value={v}
+                  control={<Radio size="small" sx={{ '&.Mui-checked': { color: COLORS.gold } }} />}
+                  label={<Typography sx={{ fontSize: '0.975rem', color: COLORS.inkLight }}>{label}</Typography>}
+                />
+              ))}
             </RadioGroup>
           </FormControl>
 
-          <Divider sx={{ my: 3 }} />
+          <Divider />
 
-          {/* Include Header */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography sx={{ fontSize: '1.125rem' }}>Include Header (Title & Author)</Typography>
-            <Switch
-              checked={settings.includeHeader}
-              onChange={(e) => setSettings({ ...settings, includeHeader: e.target.checked })}
-              size="medium"
-            />
-          </Box>
-
-          {/* Include Page Numbers */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography sx={{ fontSize: '1.125rem' }}>Include Page Numbers</Typography>
-            <Switch
-              checked={settings.includePageNumbers}
-              onChange={(e) => setSettings({ ...settings, includePageNumbers: e.target.checked })}
-              size="medium"
-            />
-          </Box>
+          {/* Toggles */}
+          {[
+            { key: 'includeHeader', label: 'Include title & author header' },
+            { key: 'includePageNumbers', label: 'Include page numbers' },
+          ].map(({ key, label }) => (
+            <Box key={key} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography sx={{ fontSize: '0.975rem', color: COLORS.inkLight }}>{label}</Typography>
+              <Switch
+                checked={!!(settings as Record<string, unknown>)[key]}
+                onChange={(e) => setSettings({ ...settings, [key]: e.target.checked })}
+                size="small"
+                sx={{
+                  '& .MuiSwitch-switchBase.Mui-checked': { color: COLORS.gold },
+                  '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: COLORS.gold },
+                }}
+              />
+            </Box>
+          ))}
         </Box>
       </DialogContent>
-      <DialogActions sx={{ p: 3 }}>
-        <Button onClick={onClose} variant="outlined" size="large" disabled={generating}>
+      <DialogActions>
+        <Button variant="outlined" onClick={onClose} disabled={generating}>
           Cancel
         </Button>
-        <Button
-          onClick={handleGenerate}
-          variant="contained"
-          color="primary"
-          size="large"
-          disabled={generating}
-        >
-          {generating ? 'Generating...' : 'Generate PDF'}
+        <Button variant="contained" onClick={() => onGenerate(settings)} disabled={generating}>
+          {generating ? <><CircularProgress size={16} sx={{ color: '#fff', mr: 1 }} />Generating…</> : 'Export PDF'}
         </Button>
       </DialogActions>
     </Dialog>
