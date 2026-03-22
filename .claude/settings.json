@@ -8,6 +8,11 @@
             "type": "command",
             "command": "f=$(jq -r '.tool_input.file_path // empty' 2>/dev/null); [[ \"$f\" == */frontend/src/* ]] && cd /Users/puneethprakash/Documents/repo/mine/voiceScribe && npm run lint --prefix frontend 2>/dev/null || true",
             "statusMessage": "Linting frontend..."
+          },
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty' 2>/dev/null); [[ \"$f\" == */backend/src/* ]] && cd /Users/puneethprakash/Documents/repo/mine/voiceScribe/backend && npx tsc --noEmit 2>&1 | head -20 || true",
+            "statusMessage": "Type-checking backend..."
           }
         ]
       }
