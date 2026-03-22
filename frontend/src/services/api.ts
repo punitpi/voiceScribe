@@ -8,7 +8,44 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 });
+
+// Auth API (uses /auth/* prefix, not /api/*)
+const authAxios = axios.create({
+  baseURL: API_BASE_URL,
+  headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
+});
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  name: string;
+  role: 'user' | 'admin';
+  status: 'pending' | 'approved' | 'rejected';
+  flags: Record<string, boolean>;
+}
+
+export const authApi = {
+  register: (email: string, password: string, name: string) =>
+    authAxios.post<{ success: boolean; message?: string; error?: string }>('/auth/register', { email, password, name }),
+  login: (email: string, password: string) =>
+    authAxios.post<{ success: boolean; data?: { user: AuthUser }; error?: string }>('/auth/login', { email, password }),
+  logout: () => authAxios.post('/auth/logout'),
+  me: () => authAxios.get<{ success: boolean; data: AuthUser }>('/auth/me'),
+  updateProfile: (name: string) => authAxios.patch('/auth/profile', { name }),
+  updateConsent: (consent: boolean) => authAxios.post('/auth/analytics-consent', { consent }),
+};
+
+export const adminApi = {
+  getUsers: () => authAxios.get<{ success: boolean; data: any[] }>('/admin/users'),
+  approveUser: (id: number) => authAxios.patch(`/admin/users/${id}/approve`),
+  rejectUser: (id: number) => authAxios.patch(`/admin/users/${id}/reject`),
+  updateUserRole: (id: number, role: 'user' | 'admin') => authAxios.patch(`/admin/users/${id}/role`, { role }),
+  getFeatureFlags: () => authAxios.get<{ success: boolean; data: any[] }>('/admin/feature-flags'),
+  setGlobalFlag: (name: string, enabled: boolean) => authAxios.patch(`/admin/feature-flags/${name}`, { enabled }),
+};
 
 // Re-export types for convenience
 export type { Project, Recording, Transcription, Document, PDF, PDFSettings, ProjectStats, ApiResponse };

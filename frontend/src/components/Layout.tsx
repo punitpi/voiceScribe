@@ -1,8 +1,12 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Box, Container, Typography, IconButton } from '@mui/material';
+import { Box, Container, Typography, IconButton, Tooltip, Button } from '@mui/material';
 import HomeIcon from '@mui/icons-material/Home';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import { COLORS } from '../theme/theme';
+import { useAuth } from '../contexts/AuthContext';
+import SettingsDialog from './SettingsDialog';
 
 interface LayoutProps {
   children: ReactNode;
@@ -12,6 +16,8 @@ export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const isHome = location.pathname === '/';
+  const { isAdmin } = useAuth();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -85,11 +91,50 @@ export default function Layout({ children }: LayoutProps) {
               >
                 Your story, your voice
               </Typography>
+
+              {isAdmin && (
+                <Tooltip title="Admin Panel">
+                  <IconButton
+                    onClick={() => navigate('/admin')}
+                    size="small"
+                    aria-label="Admin panel"
+                    sx={{
+                      width: 38,
+                      height: 38,
+                      border: `1px solid ${COLORS.border}`,
+                      borderRadius: '6px',
+                      '& .MuiSvgIcon-root': { fontSize: '1.2rem' },
+                    }}
+                  >
+                    <AdminPanelSettingsIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+
               {!isHome && (
+                <Tooltip title="Home">
+                  <IconButton
+                    onClick={() => navigate('/')}
+                    size="small"
+                    aria-label="Go home"
+                    sx={{
+                      width: 38,
+                      height: 38,
+                      border: `1px solid ${COLORS.border}`,
+                      borderRadius: '6px',
+                      '& .MuiSvgIcon-root': { fontSize: '1.2rem' },
+                    }}
+                  >
+                    <HomeIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+
+              <Tooltip title="Account settings">
                 <IconButton
-                  onClick={() => navigate('/')}
+                  onClick={() => setSettingsOpen(true)}
                   size="small"
-                  aria-label="Go home"
+                  aria-label="Account settings"
                   sx={{
                     width: 38,
                     height: 38,
@@ -98,9 +143,9 @@ export default function Layout({ children }: LayoutProps) {
                     '& .MuiSvgIcon-root': { fontSize: '1.2rem' },
                   }}
                 >
-                  <HomeIcon />
+                  <AccountCircleIcon />
                 </IconButton>
-              )}
+              </Tooltip>
             </Box>
           </Box>
         </Container>
@@ -137,6 +182,8 @@ export default function Layout({ children }: LayoutProps) {
           </Box>
         </Container>
       </Box>
+
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </Box>
   );
 }

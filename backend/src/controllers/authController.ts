@@ -117,3 +117,21 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({ success: false, error: err.message });
   }
 };
+
+export const updateAnalyticsConsent = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { consent } = req.body; // true = accepted, false = declined
+    if (typeof consent !== 'boolean') {
+      res.status(400).json({ success: false, error: 'consent must be a boolean' });
+      return;
+    }
+    const { getDb } = await import('../config/database');
+    await getDb().execute({
+      sql: 'UPDATE users SET analytics_consent = ? WHERE id = ?',
+      args: [consent ? 1 : 0, req.user!.id],
+    });
+    res.json({ success: true, message: 'Analytics consent updated' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
