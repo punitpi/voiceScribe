@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
-import { initDatabase } from './config/database';
+import { initDatabase, getDb } from './config/database';
 import { initializeSocketIO } from './config/socket';
 import { logger } from './config/logger';
 import recordingsRouter from './routes/recordings';
@@ -20,6 +20,23 @@ import spellCheckRouter from './routes/spellCheck';
 const envPath = path.join(process.cwd(), '.env');
 dotenv.config({ path: envPath });
 logger.info(`Loaded .env from: ${envPath}`);
+
+// Validate required environment variables — crash fast if missing
+const REQUIRED_ENV = ['SARVAM_API_KEY', 'JWT_SECRET'];
+const OPTIONAL_ENV_WARNINGS = ['OPENAI_API_KEY', 'SMTP_HOST', 'GOOGLE_CLIENT_ID'];
+
+function validateEnv(): void {
+  const missing = REQUIRED_ENV.filter(k => !process.env[k]);
+  if (missing.length > 0) {
+    logger.error(`Missing required environment variables: ${missing.join(', ')}. Add them to backend/.env and restart.`);
+    process.exit(1);
+  }
+  OPTIONAL_ENV_WARNINGS.forEach(k => {
+    if (!process.env[k]) logger.warn(`Optional env var ${k} not set — related features disabled`);
+  });
+}
+
+validateEnv();
 
 // Create Express app and HTTP server
 const app = express();
@@ -54,13 +71,23 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
-// Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'ok',
-    message: 'VoiceScribe API is running',
+// Health check endpoint — checks all dependencies
+app.get('/health', async (req: Request, res: Response) => {
+  const checks: Record<string, 'ok' | 'error'> = {};
+
+  try {
+    await getDb().execute('SELECT 1');
+    checks.database = 'ok';
+  } catch {
+    checks.database = 'error';
+  }
+
+  const allOk = Object.values(checks).every(v => v === 'ok');
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? 'ok' : 'degraded',
+    checks,
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV ?? 'development',
   });
 });
 
