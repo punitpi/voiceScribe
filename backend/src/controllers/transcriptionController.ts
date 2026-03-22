@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
-import { transcribeAudio, getTranscriptionByRecordingId, updateTranscription } from '../services/transcriptionService';
+import { getTranscriptionByRecordingId, updateTranscription } from '../services/transcriptionService';
+import { enqueueTranscription } from '../services/queueService';
 import { quickFormat } from '../services/textFormattingService';
 
 /**
@@ -9,18 +10,13 @@ export const startTranscription = async (req: Request, res: Response) => {
   try {
     const { recordingId } = req.params;
 
-    // Start transcription asynchronously
-    transcribeAudio(parseInt(recordingId))
-      .then(() => {
-        console.log(`Transcription completed for recording ${recordingId}`);
-      })
-      .catch((error) => {
-        console.error(`Transcription failed for recording ${recordingId}:`, error);
-      });
+    // Enqueue transcription job (Bull queue, max 2 concurrent)
+    await enqueueTranscription(parseInt(recordingId));
 
-    res.json({
+    res.status(202).json({
       success: true,
-      message: 'Transcription started. Check recording status for progress.'
+      message: 'Transcription queued. Check recording status for progress.',
+      data: { recordingId: parseInt(recordingId), status: 'queued' }
     });
   } catch (error: any) {
     console.error('Error starting transcription:', error);

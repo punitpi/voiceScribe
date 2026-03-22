@@ -106,8 +106,17 @@ export const transcribeAudio = async (
         attempt++;
 
         if (attempt < MAX_RETRIES) {
-          const delay = getRetryDelay(attempt - 1);
-          logger.warn(`Transcription failed, retrying in ${delay}ms...`, { error: lastError.message });
+          const isRateLimit = (error as any)?.response?.status === 429;
+          let delay: number;
+          if (isRateLimit) {
+            // Respect Retry-After header if present
+            const retryAfter = parseInt((error as any)?.response?.headers?.['retry-after'] ?? '5', 10);
+            delay = retryAfter * 1000;
+          } else {
+            // Exponential backoff with jitter
+            delay = getRetryDelay(attempt - 1) + Math.random() * 500;
+          }
+          logger.warn(`Transcription failed, retrying in ${Math.round(delay)}ms...`, { error: lastError.message, attempt, isRateLimit });
           await sleep(delay);
         }
       }

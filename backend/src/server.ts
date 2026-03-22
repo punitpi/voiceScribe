@@ -9,6 +9,7 @@ import { createServer } from 'http';
 import { initDatabase, getDb } from './config/database';
 import { initializeSocketIO } from './config/socket';
 import { logger } from './config/logger';
+import './services/queueService'; // Start Bull transcription queue worker
 import recordingsRouter from './routes/recordings';
 import projectsRouter from './routes/projects';
 import transcriptionsRouter from './routes/transcriptions';
