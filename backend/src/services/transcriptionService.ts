@@ -5,6 +5,7 @@ import { Recording, Transcription } from '../types/models';
 import { formatTranscription } from './textFormattingService';
 import { getSocketIO } from '../config/socket';
 import { transcribeWithSarvam } from './sarvamService';
+import { logger } from '../config/logger';
 
 // Retry configuration
 const MAX_RETRIES = 3;
@@ -30,7 +31,7 @@ const emitProgress = (event: TranscriptionEvent, payload: Record<string, unknown
   try {
     getSocketIO().emit(event, payload);
   } catch {
-    console.warn('Socket.IO not available');
+    logger.warn('Socket.IO not available for progress emission');
   }
 };
 
@@ -73,7 +74,7 @@ export const transcribeAudio = async (
     // Retry loop with exponential backoff
     while (attempt < MAX_RETRIES) {
       try {
-        console.log(`Transcription attempt ${attempt + 1}/${MAX_RETRIES} for recording ${recordingId}`);
+        logger.info(`Transcription attempt ${attempt + 1}/${MAX_RETRIES} for recording ${recordingId}`);
 
         emitProgress('transcription:progress', { recordingId, status: 'transcribing', progress: 25, message: 'Sending audio to AI transcription service...' });
 
@@ -106,7 +107,7 @@ export const transcribeAudio = async (
 
         emitProgress('transcription:complete', { recordingId, transcriptionId: transcription.id, status: 'completed', progress: 100, message: 'Transcription completed successfully!', wordCount: transcription.word_count });
 
-        console.log(`✅ Transcription completed for recording ${recordingId}`);
+        logger.info(`Transcription completed for recording ${recordingId}`);
         return transcription;
 
       } catch (error: unknown) {
@@ -115,7 +116,7 @@ export const transcribeAudio = async (
 
         if (attempt < MAX_RETRIES) {
           const delay = getRetryDelay(attempt - 1);
-          console.log(`Transcription failed, retrying in ${delay}ms... (${lastError.message})`);
+          logger.warn(`Transcription failed, retrying in ${delay}ms...`, { error: lastError.message });
           await sleep(delay);
         }
       }
@@ -133,14 +134,14 @@ export const transcribeAudio = async (
     );
 
   } catch (error: unknown) {
-    console.error('Transcription error:', error);
+    logger.error('Transcription error', { recordingId, error: error instanceof Error ? error.message : String(error) });
 
     if (!statusUpdated) {
       try {
         await updateRecordingStatus(recordingId, 'failed');
         onProgress?.('failed');
       } catch (updateError) {
-        console.error('Error updating recording status:', updateError);
+        logger.error('Error updating recording status after failure', { recordingId, updateError });
       }
     }
 

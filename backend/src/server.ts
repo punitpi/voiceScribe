@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import { initDatabase } from './config/database';
 import { initializeSocketIO } from './config/socket';
+import { logger } from './config/logger';
 import recordingsRouter from './routes/recordings';
 import projectsRouter from './routes/projects';
 import transcriptionsRouter from './routes/transcriptions';
@@ -17,9 +18,8 @@ import spellCheckRouter from './routes/spellCheck';
 
 // Load environment variables - use process.cwd() which is the backend directory
 const envPath = path.join(process.cwd(), '.env');
-console.log('Loading .env from:', envPath);
 dotenv.config({ path: envPath });
-console.log('OPENAI_API_KEY loaded:', process.env.OPENAI_API_KEY ? 'YES (length: ' + process.env.OPENAI_API_KEY.length + ')' : 'NO');
+logger.info(`Loaded .env from: ${envPath}`);
 
 // Create Express app and HTTP server
 const app = express();
@@ -95,7 +95,7 @@ app.use((req: Request, res: Response) => {
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: any) => {
-  console.error('Error:', err);
+  logger.error('Unhandled error', { message: err.message, stack: err.stack });
   res.status(500).json({
     error: 'Internal Server Error',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
@@ -113,23 +113,10 @@ const startServer = async () => {
 
     // Start server with Socket.IO
     httpServer.listen(PORT, () => {
-      console.log(`
-╔════════════════════════════════════════╗
-║                                        ║
-║   VoiceScribe API Server               ║
-║                                        ║
-║   Status: Running                      ║
-║   Port: ${PORT}                       ║
-║   Environment: ${process.env.NODE_ENV || 'development'}              ║
-║   URL: http://localhost:${PORT}        ║
-║   Socket.IO: Enabled                   ║
-║   AI Spell Check: Ready                ║
-║                                        ║
-╚════════════════════════════════════════╝
-      `);
+      logger.info(`VoiceScribe API running on http://localhost:${PORT} [${process.env.NODE_ENV ?? 'development'}]`);
     });
   } catch (error) {
-    console.error('❌ Failed to start server:', error);
+    logger.error('Failed to start server', { error });
     process.exit(1);
   }
 };
