@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getDb } from '../config/database';
-import { generatePDF, savePDFMetadata, getPDFPath, deletePDF } from '../services/pdfService';
+import { generatePDF, savePDFMetadata } from '../services/pdfService';
+import { storageService } from '../services/storageService';
 import { GeneratePDFRequest } from '../types/models';
 
 /**
@@ -127,7 +128,7 @@ export const downloadPDF = async (req: Request, res: Response) => {
       });
     }
 
-    const filePath = getPDFPath(pdf.filename);
+    const filePath = storageService.getPDFPath(pdf.filename);
 
     res.download(filePath, pdf.filename, (err) => {
       if (err) {
@@ -170,8 +171,8 @@ export const deletePDFById = async (req: Request, res: Response) => {
       });
     }
 
-    // Delete file
-    deletePDF(pdf.filename);
+    // Delete file via storageService (includes path guard, async)
+    await storageService.deletePDF(pdf.filename);
 
     // Delete from database
     await getDb().execute({

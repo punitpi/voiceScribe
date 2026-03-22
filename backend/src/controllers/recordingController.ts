@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { Recording } from '../types/models';
 import path from 'path';
-import fs from 'fs';
+import { storageService } from '../services/storageService';
 
 /**
  * Upload a new audio recording
@@ -20,7 +20,7 @@ export const uploadRecording = async (req: Request, res: Response) => {
 
     if (!project_id) {
       // Clean up uploaded file
-      fs.unlinkSync(req.file.path);
+      await storageService.deleteAudio(path.basename(req.file.path)).catch(() => {});
       return res.status(400).json({
         success: false,
         error: 'project_id is required'
@@ -35,7 +35,7 @@ export const uploadRecording = async (req: Request, res: Response) => {
 
     if (!projectResult.rows[0]) {
       // Clean up uploaded file
-      fs.unlinkSync(req.file.path);
+      await storageService.deleteAudio(path.basename(req.file.path)).catch(() => {});
       return res.status(404).json({
         success: false,
         error: 'Project not found'
@@ -53,11 +53,9 @@ export const uploadRecording = async (req: Request, res: Response) => {
     const recordingNumber = count + 1;
     const ext = path.extname(req.file.originalname);
     const newFilename = `recording-${recordingNumber}${ext}`;
-    const oldPath = req.file.path;
-    const newPath = path.join(path.dirname(oldPath), newFilename);
 
-    // Rename the file
-    fs.renameSync(oldPath, newPath);
+    // Move file to permanent location via storageService (async, with path guard)
+    await storageService.saveAudio(req.file.path, newFilename);
 
     // Create recording record
     const recording: Recording = {
@@ -95,11 +93,7 @@ export const uploadRecording = async (req: Request, res: Response) => {
 
     // Clean up file if it was uploaded
     if (req.file) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (unlinkError) {
-        console.error('Error deleting file:', unlinkError);
-      }
+      await storageService.deleteAudio(path.basename(req.file.path)).catch(() => {});
     }
 
     res.status(500).json({
@@ -192,15 +186,8 @@ export const deleteRecording = async (req: Request, res: Response) => {
       });
     }
 
-    // Delete file from disk
-    const UPLOAD_ROOT = path.resolve('./uploads/audio');
-    const filePath = path.resolve(UPLOAD_ROOT, recording.filename);
-    if (!filePath.startsWith(UPLOAD_ROOT + path.sep)) {
-      return res.status(400).json({ success: false, error: 'Invalid filename' });
-    }
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
+    // Delete file from disk via storageService (includes path guard)
+    await storageService.deleteAudio(recording.filename);
 
     // Delete from database (will cascade delete transcriptions)
     await getDb().execute({
@@ -242,17 +229,11 @@ export const downloadRecording = async (req: Request, res: Response) => {
       });
     }
 
-    const UPLOAD_ROOT = path.resolve('./uploads/audio');
-    const filePath = path.resolve(UPLOAD_ROOT, recording.filename);
-    if (!filePath.startsWith(UPLOAD_ROOT + path.sep)) {
+    let filePath: string;
+    try {
+      filePath = storageService.getAudioPath(recording.filename);
+    } catch {
       return res.status(400).json({ success: false, error: 'Invalid filename' });
-    }
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({
-        success: false,
-        error: 'Audio file not found on disk'
-      });
     }
 
     res.download(filePath, recording.original_filename || recording.filename);

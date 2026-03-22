@@ -1,10 +1,9 @@
-import fs from 'fs';
-import path from 'path';
 import { getDb } from '../config/database';
 import { Recording, Transcription } from '../types/models';
 import { formatTranscription } from './textFormattingService';
 import { getSocketIO } from '../config/socket';
 import { transcribeWithSarvam } from './sarvamService';
+import { storageService } from './storageService';
 import { logger } from '../config/logger';
 
 // Retry configuration
@@ -58,15 +57,7 @@ export const transcribeAudio = async (
 
     emitProgress('transcription:progress', { recordingId, status: 'transcribing', progress: 10, message: 'Preparing audio file for transcription...' });
 
-    const UPLOAD_ROOT = path.resolve('./uploads/audio');
-    const audioFilePath = path.resolve(UPLOAD_ROOT, recording.filename);
-    if (!audioFilePath.startsWith(UPLOAD_ROOT + path.sep)) {
-      throw new Error('Invalid recording filename');
-    }
-
-    if (!fs.existsSync(audioFilePath)) {
-      throw new Error('Audio file not found on disk');
-    }
+    const audioFilePath = storageService.getAudioPath(recording.filename);
 
     let lastError: Error | null = null;
     let attempt = 0;
