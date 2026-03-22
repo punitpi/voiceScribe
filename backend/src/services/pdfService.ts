@@ -1,7 +1,7 @@
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
-import { db } from '../config/database';
+import { getDb } from '../config/database';
 import { PDFSettings } from '../types/models';
 
 const PDFS_DIR = path.join(process.cwd(), 'data', 'pdfs');
@@ -204,17 +204,12 @@ export const savePDFMetadata = async (
   fileSize: number,
   pageCount: number
 ): Promise<number> => {
-  return new Promise((resolve, reject) => {
-    db.run(
-      `INSERT INTO pdfs (document_id, filename, settings, file_size, page_count)
-       VALUES (?, ?, ?, ?, ?)`,
-      [documentId, filename, JSON.stringify(settings), fileSize, pageCount],
-      function (err) {
-        if (err) reject(err);
-        else resolve(this.lastID);
-      }
-    );
+  const result = await getDb().execute({
+    sql: `INSERT INTO pdfs (document_id, filename, settings, file_size, page_count)
+          VALUES (?, ?, ?, ?, ?)`,
+    args: [documentId, filename, JSON.stringify(settings), fileSize, pageCount],
   });
+  return Number(result.lastInsertRowid);
 };
 
 export const getPDFPath = (filename: string): string => {

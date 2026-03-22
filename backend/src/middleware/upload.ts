@@ -1,7 +1,6 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { db } from '../config/database';
 
 // Ensure upload directory exists
 const UPLOAD_DIR = './uploads/audio';

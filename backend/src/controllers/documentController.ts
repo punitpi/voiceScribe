@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { db } from '../config/database';
+import { getDb } from '../config/database';
 import { Document, UpdateDocumentRequest } from '../types/models';
 
 /**
@@ -9,16 +9,11 @@ export const getDocument = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
 
-    const document = await new Promise<Document>((resolve, reject) => {
-      db.get(
-        'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
-        [projectId],
-        (err, row: Document) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
+    const result = await getDb().execute({
+      sql: 'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
+      args: [projectId],
     });
+    const document = result.rows[0] as unknown as Document | undefined;
 
     if (!document) {
       return res.status(404).json({
@@ -57,16 +52,11 @@ export const updateDocument = async (req: Request, res: Response) => {
     }
 
     // Get current document
-    const currentDoc = await new Promise<Document>((resolve, reject) => {
-      db.get(
-        'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
-        [projectId],
-        (err, row: Document) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
+    const currentDocResult = await getDb().execute({
+      sql: 'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
+      args: [projectId],
     });
+    const currentDoc = currentDocResult.rows[0] as unknown as Document | undefined;
 
     if (!currentDoc) {
       return res.status(404).json({
@@ -81,29 +71,18 @@ export const updateDocument = async (req: Request, res: Response) => {
     const newVersion = ((currentDoc.version ?? 0) as number) + 1;
 
     // Insert new version
-    await new Promise<void>((resolve, reject) => {
-      db.run(
-        `INSERT INTO documents (project_id, content, version, word_count, character_count)
-         VALUES (?, ?, ?, ?, ?)`,
-        [projectId, content, newVersion, wordCount, characterCount],
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
+    await getDb().execute({
+      sql: `INSERT INTO documents (project_id, content, version, word_count, character_count)
+            VALUES (?, ?, ?, ?, ?)`,
+      args: [projectId, content, newVersion, wordCount, characterCount],
     });
 
     // Get the new document
-    const newDoc = await new Promise<Document>((resolve, reject) => {
-      db.get(
-        'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
-        [projectId],
-        (err, row: Document) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
+    const newDocResult = await getDb().execute({
+      sql: 'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
+      args: [projectId],
     });
+    const newDoc = newDocResult.rows[0] as unknown as Document;
 
     res.json({
       success: true,
@@ -128,19 +107,14 @@ export const combineTranscriptions = async (req: Request, res: Response) => {
     const { projectId } = req.params;
 
     // Get all completed recordings for the project
-    const recordings = await new Promise<any[]>((resolve, reject) => {
-      db.all(
-        `SELECT r.id, r.created_at
-         FROM recordings r
-         WHERE r.project_id = ? AND r.status = 'completed'
-         ORDER BY r.created_at ASC`,
-        [projectId],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows);
-        }
-      );
+    const recordingsResult = await getDb().execute({
+      sql: `SELECT r.id, r.created_at
+            FROM recordings r
+            WHERE r.project_id = ? AND r.status = 'completed'
+            ORDER BY r.created_at ASC`,
+      args: [projectId],
     });
+    const recordings = recordingsResult.rows as unknown as Array<{ id: number; created_at: string }>;
 
     if (recordings.length === 0) {
       return res.status(400).json({
@@ -152,16 +126,11 @@ export const combineTranscriptions = async (req: Request, res: Response) => {
     // Get transcriptions for all recordings
     const transcriptionTexts: string[] = [];
     for (const recording of recordings) {
-      const transcription = await new Promise<any>((resolve, reject) => {
-        db.get(
-          'SELECT formatted_text, raw_text FROM transcriptions WHERE recording_id = ?',
-          [recording.id],
-          (err, row) => {
-            if (err) reject(err);
-            else resolve(row);
-          }
-        );
+      const transcriptionResult = await getDb().execute({
+        sql: 'SELECT formatted_text, raw_text FROM transcriptions WHERE recording_id = ?',
+        args: [recording.id],
       });
+      const transcription = transcriptionResult.rows[0] as unknown as { formatted_text: string; raw_text: string } | undefined;
 
       if (transcription) {
         const text = transcription.formatted_text || transcription.raw_text;
@@ -175,16 +144,11 @@ export const combineTranscriptions = async (req: Request, res: Response) => {
     const combinedContent = transcriptionTexts.join('\n\n');
 
     // Get current document
-    const currentDoc = await new Promise<Document>((resolve, reject) => {
-      db.get(
-        'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
-        [projectId],
-        (err, row: Document) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
+    const currentDocResult = await getDb().execute({
+      sql: 'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
+      args: [projectId],
     });
+    const currentDoc = currentDocResult.rows[0] as unknown as Document | undefined;
 
     if (!currentDoc) {
       return res.status(404).json({
@@ -199,29 +163,18 @@ export const combineTranscriptions = async (req: Request, res: Response) => {
     const newVersion = ((currentDoc.version ?? 0) as number) + 1;
 
     // Insert new version with combined content
-    await new Promise<void>((resolve, reject) => {
-      db.run(
-        `INSERT INTO documents (project_id, content, version, word_count, character_count)
-         VALUES (?, ?, ?, ?, ?)`,
-        [projectId, combinedContent, newVersion, wordCount, characterCount],
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
+    await getDb().execute({
+      sql: `INSERT INTO documents (project_id, content, version, word_count, character_count)
+            VALUES (?, ?, ?, ?, ?)`,
+      args: [projectId, combinedContent, newVersion, wordCount, characterCount],
     });
 
     // Get the new document
-    const newDoc = await new Promise<Document>((resolve, reject) => {
-      db.get(
-        'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
-        [projectId],
-        (err, row: Document) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
+    const newDocResult = await getDb().execute({
+      sql: 'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
+      args: [projectId],
     });
+    const newDoc = newDocResult.rows[0] as unknown as Document;
 
     res.json({
       success: true,
@@ -246,16 +199,11 @@ export const appendNewTranscriptions = async (req: Request, res: Response) => {
     const { projectId } = req.params;
 
     // Get current document
-    const currentDoc = await new Promise<Document>((resolve, reject) => {
-      db.get(
-        'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
-        [projectId],
-        (err, row: Document) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
+    const currentDocResult = await getDb().execute({
+      sql: 'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
+      args: [projectId],
     });
+    const currentDoc = currentDocResult.rows[0] as unknown as Document | undefined;
 
     if (!currentDoc) {
       return res.status(404).json({
@@ -265,21 +213,16 @@ export const appendNewTranscriptions = async (req: Request, res: Response) => {
     }
 
     // Get recordings completed after the last document update
-    const recordings = await new Promise<any[]>((resolve, reject) => {
-      db.all(
-        `SELECT r.id, r.created_at
-         FROM recordings r
-         WHERE r.project_id = ?
-           AND r.status = 'completed'
-           AND r.created_at > ?
-         ORDER BY r.created_at ASC`,
-        [projectId, currentDoc.updated_at || currentDoc.created_at],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows);
-        }
-      );
+    const recordingsResult = await getDb().execute({
+      sql: `SELECT r.id, r.created_at
+            FROM recordings r
+            WHERE r.project_id = ?
+              AND r.status = 'completed'
+              AND r.created_at > ?
+            ORDER BY r.created_at ASC`,
+      args: [projectId, currentDoc.updated_at ?? currentDoc.created_at ?? null],
     });
+    const recordings = recordingsResult.rows as unknown as Array<{ id: number; created_at: string }>;
 
     if (recordings.length === 0) {
       return res.status(400).json({
@@ -291,16 +234,11 @@ export const appendNewTranscriptions = async (req: Request, res: Response) => {
     // Get transcriptions for new recordings
     const newTranscriptionTexts: string[] = [];
     for (const recording of recordings) {
-      const transcription = await new Promise<any>((resolve, reject) => {
-        db.get(
-          'SELECT formatted_text, raw_text FROM transcriptions WHERE recording_id = ?',
-          [recording.id],
-          (err, row) => {
-            if (err) reject(err);
-            else resolve(row);
-          }
-        );
+      const transcriptionResult = await getDb().execute({
+        sql: 'SELECT formatted_text, raw_text FROM transcriptions WHERE recording_id = ?',
+        args: [recording.id],
       });
+      const transcription = transcriptionResult.rows[0] as unknown as { formatted_text: string; raw_text: string } | undefined;
 
       if (transcription) {
         const text = transcription.formatted_text || transcription.raw_text;
@@ -322,29 +260,18 @@ export const appendNewTranscriptions = async (req: Request, res: Response) => {
     const newVersion = (currentDoc.version || 0) + 1;
 
     // Insert new version with appended content
-    await new Promise<void>((resolve, reject) => {
-      db.run(
-        `INSERT INTO documents (project_id, content, version, word_count, character_count)
-         VALUES (?, ?, ?, ?, ?)`,
-        [projectId, appendedContent, newVersion, wordCount, characterCount],
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
+    await getDb().execute({
+      sql: `INSERT INTO documents (project_id, content, version, word_count, character_count)
+            VALUES (?, ?, ?, ?, ?)`,
+      args: [projectId, appendedContent, newVersion, wordCount, characterCount],
     });
 
     // Get the new document
-    const newDoc = await new Promise<Document>((resolve, reject) => {
-      db.get(
-        'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
-        [projectId],
-        (err, row: Document) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
+    const newDocResult = await getDb().execute({
+      sql: 'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
+      args: [projectId],
     });
+    const newDoc = newDocResult.rows[0] as unknown as Document;
 
     res.json({
       success: true,
@@ -368,16 +295,11 @@ export const getDocumentHistory = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
 
-    const history = await new Promise<Document[]>((resolve, reject) => {
-      db.all(
-        'SELECT id, project_id, version, word_count, character_count, created_at FROM documents WHERE project_id = ? ORDER BY version DESC',
-        [projectId],
-        (err, rows: Document[]) => {
-          if (err) reject(err);
-          else resolve(rows);
-        }
-      );
+    const result = await getDb().execute({
+      sql: 'SELECT id, project_id, version, word_count, character_count, created_at FROM documents WHERE project_id = ? ORDER BY version DESC',
+      args: [projectId],
     });
+    const history = result.rows as unknown as Document[];
 
     res.json({
       success: true,

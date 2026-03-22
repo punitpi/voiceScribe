@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { db } from '../config/database';
+import { getDb } from '../config/database';
 import { generatePDF, savePDFMetadata, getPDFPath, deletePDF } from '../services/pdfService';
 import { GeneratePDFRequest } from '../types/models';
 
@@ -12,12 +12,11 @@ export const generatePDFFromDocument = async (req: Request, res: Response) => {
     const { settings }: GeneratePDFRequest = req.body;
 
     // Get document
-    const document = await new Promise<any>((resolve, reject) => {
-      db.get('SELECT * FROM documents WHERE id = ?', [documentId], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const documentResult = await getDb().execute({
+      sql: 'SELECT * FROM documents WHERE id = ?',
+      args: [documentId],
     });
+    const document = documentResult.rows[0] as unknown as { id: number; project_id: number; content: string } | undefined;
 
     if (!document) {
       return res.status(404).json({
@@ -27,12 +26,11 @@ export const generatePDFFromDocument = async (req: Request, res: Response) => {
     }
 
     // Get project details
-    const project = await new Promise<any>((resolve, reject) => {
-      db.get('SELECT * FROM projects WHERE id = ?', [document.project_id], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const projectResult = await getDb().execute({
+      sql: 'SELECT * FROM projects WHERE id = ?',
+      args: [document.project_id],
     });
+    const project = projectResult.rows[0] as unknown as { id: number; title: string; author_name?: string } | undefined;
 
     if (!project) {
       return res.status(404).json({
@@ -61,12 +59,11 @@ export const generatePDFFromDocument = async (req: Request, res: Response) => {
     );
 
     // Get the created PDF record
-    const pdf = await new Promise<any>((resolve, reject) => {
-      db.get('SELECT * FROM pdfs WHERE id = ?', [pdfId], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const pdfResult2 = await getDb().execute({
+      sql: 'SELECT * FROM pdfs WHERE id = ?',
+      args: [pdfId],
     });
+    const pdf = pdfResult2.rows[0] as unknown as object;
 
     res.status(201).json({
       success: true,
@@ -90,16 +87,11 @@ export const getPDFsByDocument = async (req: Request, res: Response) => {
   try {
     const { documentId } = req.params;
 
-    const pdfs = await new Promise<any[]>((resolve, reject) => {
-      db.all(
-        'SELECT * FROM pdfs WHERE document_id = ? ORDER BY created_at DESC',
-        [documentId],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows);
-        }
-      );
+    const result = await getDb().execute({
+      sql: 'SELECT * FROM pdfs WHERE document_id = ? ORDER BY created_at DESC',
+      args: [documentId],
     });
+    const pdfs = result.rows as unknown as object[];
 
     res.json({
       success: true,
@@ -122,12 +114,11 @@ export const downloadPDF = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const pdf = await new Promise<any>((resolve, reject) => {
-      db.get('SELECT * FROM pdfs WHERE id = ?', [id], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const result = await getDb().execute({
+      sql: 'SELECT * FROM pdfs WHERE id = ?',
+      args: [id],
     });
+    const pdf = result.rows[0] as unknown as { id: number; filename: string } | undefined;
 
     if (!pdf) {
       return res.status(404).json({
@@ -166,12 +157,11 @@ export const deletePDFById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const pdf = await new Promise<any>((resolve, reject) => {
-      db.get('SELECT * FROM pdfs WHERE id = ?', [id], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const result = await getDb().execute({
+      sql: 'SELECT * FROM pdfs WHERE id = ?',
+      args: [id],
     });
+    const pdf = result.rows[0] as unknown as { id: number; filename: string } | undefined;
 
     if (!pdf) {
       return res.status(404).json({
@@ -184,11 +174,9 @@ export const deletePDFById = async (req: Request, res: Response) => {
     deletePDF(pdf.filename);
 
     // Delete from database
-    await new Promise<void>((resolve, reject) => {
-      db.run('DELETE FROM pdfs WHERE id = ?', [id], (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+    await getDb().execute({
+      sql: 'DELETE FROM pdfs WHERE id = ?',
+      args: [id],
     });
 
     res.json({

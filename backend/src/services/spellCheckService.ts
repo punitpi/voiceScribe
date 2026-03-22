@@ -2,7 +2,7 @@
  * AI-powered Spell Checking Service using OpenAI
  */
 import axios from 'axios';
-import { db } from '../config/database';
+import { getDb } from '../config/database';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 
@@ -150,16 +150,10 @@ export const addToCustomDictionary = async (
   word: string,
   language: 'en' | 'kn' = 'en'
 ): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    db.run(
-      `INSERT INTO custom_dictionary (user_id, project_id, word, language)
-       VALUES (?, ?, ?, ?)`,
-      [userId, projectId, word.toLowerCase(), language],
-      (err) => {
-        if (err) reject(err);
-        else resolve();
-      }
-    );
+  await getDb().execute({
+    sql: `INSERT INTO custom_dictionary (user_id, project_id, word, language)
+          VALUES (?, ?, ?, ?)`,
+    args: [userId, projectId, word.toLowerCase(), language],
   });
 };
 
@@ -171,20 +165,17 @@ export const isInCustomDictionary = async (
   projectId: number | null,
   word: string
 ): Promise<boolean> => {
-  return new Promise((resolve, reject) => {
-    const query = projectId
-      ? 'SELECT COUNT(*) as count FROM custom_dictionary WHERE (user_id = ? OR user_id IS NULL) AND (project_id = ? OR project_id IS NULL) AND word = ?'
-      : 'SELECT COUNT(*) as count FROM custom_dictionary WHERE (user_id = ? OR user_id IS NULL) AND project_id IS NULL AND word = ?';
+  const query = projectId
+    ? 'SELECT COUNT(*) as count FROM custom_dictionary WHERE (user_id = ? OR user_id IS NULL) AND (project_id = ? OR project_id IS NULL) AND word = ?'
+    : 'SELECT COUNT(*) as count FROM custom_dictionary WHERE (user_id = ? OR user_id IS NULL) AND project_id IS NULL AND word = ?';
 
-    const params = projectId
-      ? [userId, projectId, word.toLowerCase()]
-      : [userId, word.toLowerCase()];
+  const args = projectId
+    ? [userId, projectId, word.toLowerCase()]
+    : [userId, word.toLowerCase()];
 
-    db.get(query, params, (err, row: any) => {
-      if (err) reject(err);
-      else resolve(row.count > 0);
-    });
-  });
+  const result = await getDb().execute({ sql: query, args });
+  const row = result.rows[0] as unknown as { count: number };
+  return row.count > 0;
 };
 
 /**
@@ -194,18 +185,14 @@ export const getCustomDictionary = async (
   userId: number | null,
   projectId: number | null
 ): Promise<string[]> => {
-  return new Promise((resolve, reject) => {
-    const query = projectId
-      ? 'SELECT DISTINCT word FROM custom_dictionary WHERE (user_id = ? OR user_id IS NULL) AND (project_id = ? OR project_id IS NULL)'
-      : 'SELECT DISTINCT word FROM custom_dictionary WHERE (user_id = ? OR user_id IS NULL) AND project_id IS NULL';
+  const query = projectId
+    ? 'SELECT DISTINCT word FROM custom_dictionary WHERE (user_id = ? OR user_id IS NULL) AND (project_id = ? OR project_id IS NULL)'
+    : 'SELECT DISTINCT word FROM custom_dictionary WHERE (user_id = ? OR user_id IS NULL) AND project_id IS NULL';
 
-    const params = projectId ? [userId, projectId] : [userId];
+  const args = projectId ? [userId, projectId] : [userId];
 
-    db.all(query, params, (err, rows: any[]) => {
-      if (err) reject(err);
-      else resolve(rows.map(row => row.word));
-    });
-  });
+  const result = await getDb().execute({ sql: query, args });
+  return result.rows.map(row => (row as unknown as { word: string }).word);
 };
 
 /**
@@ -216,20 +203,15 @@ export const removeFromCustomDictionary = async (
   projectId: number | null,
   word: string
 ): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    const query = projectId
-      ? 'DELETE FROM custom_dictionary WHERE user_id = ? AND project_id = ? AND word = ?'
-      : 'DELETE FROM custom_dictionary WHERE user_id = ? AND project_id IS NULL AND word = ?';
+  const query = projectId
+    ? 'DELETE FROM custom_dictionary WHERE user_id = ? AND project_id = ? AND word = ?'
+    : 'DELETE FROM custom_dictionary WHERE user_id = ? AND project_id IS NULL AND word = ?';
 
-    const params = projectId
-      ? [userId, projectId, word.toLowerCase()]
-      : [userId, word.toLowerCase()];
+  const args = projectId
+    ? [userId, projectId, word.toLowerCase()]
+    : [userId, word.toLowerCase()];
 
-    db.run(query, params, (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
+  await getDb().execute({ sql: query, args });
 };
 
 /**

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { db } from '../config/database';
+import { getDb } from '../config/database';
 import { Recording } from '../types/models';
 import path from 'path';
 import fs from 'fs';
@@ -28,14 +28,12 @@ export const uploadRecording = async (req: Request, res: Response) => {
     }
 
     // Verify project exists
-    const project = await new Promise<any>((resolve, reject) => {
-      db.get('SELECT id FROM projects WHERE id = ?', [project_id], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const projectResult = await getDb().execute({
+      sql: 'SELECT id FROM projects WHERE id = ?',
+      args: [project_id],
     });
 
-    if (!project) {
+    if (!projectResult.rows[0]) {
       // Clean up uploaded file
       fs.unlinkSync(req.file.path);
       return res.status(404).json({
@@ -45,16 +43,12 @@ export const uploadRecording = async (req: Request, res: Response) => {
     }
 
     // Get count of recordings for this project to generate sequential filename
-    const count = await new Promise<number>((resolve, reject) => {
-      db.get(
-        'SELECT COUNT(*) as count FROM recordings WHERE project_id = ?',
-        [project_id],
-        (err, row: any) => {
-          if (err) reject(err);
-          else resolve(row?.count || 0);
-        }
-      );
+    const countResult = await getDb().execute({
+      sql: 'SELECT COUNT(*) as count FROM recordings WHERE project_id = ?',
+      args: [project_id],
     });
+    const countRow = countResult.rows[0] as unknown as { count: number };
+    const count = countRow?.count || 0;
 
     const recordingNumber = count + 1;
     const ext = path.extname(req.file.originalname);
@@ -75,26 +69,21 @@ export const uploadRecording = async (req: Request, res: Response) => {
       status: 'pending'
     };
 
-    const result = await new Promise<any>((resolve, reject) => {
-      db.run(
-        `INSERT INTO recordings (project_id, filename, original_filename, file_size, language, status)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [recording.project_id, recording.filename, recording.original_filename,
-         recording.file_size, recording.language, recording.status],
-        function(err) {
-          if (err) reject(err);
-          else resolve({ id: this.lastID });
-        }
-      );
+    const insertResult = await getDb().execute({
+      sql: `INSERT INTO recordings (project_id, filename, original_filename, file_size, language, status)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [recording.project_id, recording.filename, recording.original_filename ?? null,
+             recording.file_size ?? null, recording.language, recording.status],
     });
 
+    const newId = Number(insertResult.lastInsertRowid);
+
     // Get the created recording
-    const createdRecording = await new Promise<Recording>((resolve, reject) => {
-      db.get('SELECT * FROM recordings WHERE id = ?', [result.id], (err, row: Recording) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const createdResult = await getDb().execute({
+      sql: 'SELECT * FROM recordings WHERE id = ?',
+      args: [newId],
     });
+    const createdRecording = createdResult.rows[0] as unknown as Recording;
 
     res.status(201).json({
       success: true,
@@ -128,16 +117,11 @@ export const getRecordingsByProject = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
 
-    const recordings = await new Promise<Recording[]>((resolve, reject) => {
-      db.all(
-        'SELECT * FROM recordings WHERE project_id = ? ORDER BY created_at DESC',
-        [projectId],
-        (err, rows: Recording[]) => {
-          if (err) reject(err);
-          else resolve(rows);
-        }
-      );
+    const result = await getDb().execute({
+      sql: 'SELECT * FROM recordings WHERE project_id = ? ORDER BY created_at DESC',
+      args: [projectId],
     });
+    const recordings = result.rows as unknown as Recording[];
 
     res.json({
       success: true,
@@ -160,12 +144,11 @@ export const getRecording = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const recording = await new Promise<Recording>((resolve, reject) => {
-      db.get('SELECT * FROM recordings WHERE id = ?', [id], (err, row: Recording) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const result = await getDb().execute({
+      sql: 'SELECT * FROM recordings WHERE id = ?',
+      args: [id],
     });
+    const recording = result.rows[0] as unknown as Recording | undefined;
 
     if (!recording) {
       return res.status(404).json({
@@ -196,12 +179,11 @@ export const deleteRecording = async (req: Request, res: Response) => {
     const { id } = req.params;
 
     // Get recording details
-    const recording = await new Promise<Recording>((resolve, reject) => {
-      db.get('SELECT * FROM recordings WHERE id = ?', [id], (err, row: Recording) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const result = await getDb().execute({
+      sql: 'SELECT * FROM recordings WHERE id = ?',
+      args: [id],
     });
+    const recording = result.rows[0] as unknown as Recording | undefined;
 
     if (!recording) {
       return res.status(404).json({
@@ -217,11 +199,9 @@ export const deleteRecording = async (req: Request, res: Response) => {
     }
 
     // Delete from database (will cascade delete transcriptions)
-    await new Promise<void>((resolve, reject) => {
-      db.run('DELETE FROM recordings WHERE id = ?', [id], (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+    await getDb().execute({
+      sql: 'DELETE FROM recordings WHERE id = ?',
+      args: [id],
     });
 
     res.json({
@@ -245,12 +225,11 @@ export const downloadRecording = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const recording = await new Promise<Recording>((resolve, reject) => {
-      db.get('SELECT * FROM recordings WHERE id = ?', [id], (err, row: Recording) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const result = await getDb().execute({
+      sql: 'SELECT * FROM recordings WHERE id = ?',
+      args: [id],
     });
+    const recording = result.rows[0] as unknown as Recording | undefined;
 
     if (!recording) {
       return res.status(404).json({

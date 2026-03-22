@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { db } from '../config/database';
+import { getDb } from '../config/database';
 import { Project, CreateProjectRequest, UpdateProjectRequest } from '../types/models';
 
 /**
@@ -16,37 +16,26 @@ export const createProject = async (req: Request, res: Response) => {
       });
     }
 
-    const result = await new Promise<any>((resolve, reject) => {
-      db.run(
-        `INSERT INTO projects (title, author_name, language, description)
-         VALUES (?, ?, ?, ?)`,
-        [title.trim(), author_name || null, language, description || null],
-        function(err) {
-          if (err) reject(err);
-          else resolve({ id: this.lastID });
-        }
-      );
+    const insertResult = await getDb().execute({
+      sql: `INSERT INTO projects (title, author_name, language, description)
+            VALUES (?, ?, ?, ?)`,
+      args: [title.trim(), author_name || null, language, description || null],
     });
+
+    const newId = Number(insertResult.lastInsertRowid);
 
     // Get the created project
-    const project = await new Promise<Project>((resolve, reject) => {
-      db.get('SELECT * FROM projects WHERE id = ?', [result.id], (err, row: Project) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const projectResult = await getDb().execute({
+      sql: 'SELECT * FROM projects WHERE id = ?',
+      args: [newId],
     });
+    const project = projectResult.rows[0] as unknown as Project;
 
     // Create initial document for the project
-    await new Promise<void>((resolve, reject) => {
-      db.run(
-        `INSERT INTO documents (project_id, content, version, word_count, character_count)
-         VALUES (?, ?, 1, 0, 0)`,
-        [result.id, ''],
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
+    await getDb().execute({
+      sql: `INSERT INTO documents (project_id, content, version, word_count, character_count)
+            VALUES (?, ?, 1, 0, 0)`,
+      args: [newId, ''],
     });
 
     res.status(201).json({
@@ -71,16 +60,12 @@ export const getAllProjects = async (req: Request, res: Response) => {
   try {
     const { include_archived = 'false' } = req.query;
 
-    const query = include_archived === 'true'
+    const sql = include_archived === 'true'
       ? 'SELECT * FROM projects ORDER BY updated_at DESC'
       : 'SELECT * FROM projects WHERE archived = 0 ORDER BY updated_at DESC';
 
-    const projects = await new Promise<Project[]>((resolve, reject) => {
-      db.all(query, [], (err, rows: Project[]) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
+    const result = await getDb().execute({ sql, args: [] });
+    const projects = result.rows as unknown as Project[];
 
     res.json({
       success: true,
@@ -103,12 +88,11 @@ export const getProject = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const project = await new Promise<Project>((resolve, reject) => {
-      db.get('SELECT * FROM projects WHERE id = ?', [id], (err, row: Project) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const result = await getDb().execute({
+      sql: 'SELECT * FROM projects WHERE id = ?',
+      args: [id],
     });
+    const project = result.rows[0] as unknown as Project | undefined;
 
     if (!project) {
       return res.status(404).json({
@@ -140,12 +124,11 @@ export const updateProject = async (req: Request, res: Response) => {
     const { title, author_name, description }: UpdateProjectRequest = req.body;
 
     // Check if project exists
-    const project = await new Promise<Project>((resolve, reject) => {
-      db.get('SELECT * FROM projects WHERE id = ?', [id], (err, row: Project) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const checkResult = await getDb().execute({
+      sql: 'SELECT * FROM projects WHERE id = ?',
+      args: [id],
     });
+    const project = checkResult.rows[0] as unknown as Project | undefined;
 
     if (!project) {
       return res.status(404).json({
@@ -181,24 +164,17 @@ export const updateProject = async (req: Request, res: Response) => {
     updates.push('updated_at = CURRENT_TIMESTAMP');
     values.push(id);
 
-    await new Promise<void>((resolve, reject) => {
-      db.run(
-        `UPDATE projects SET ${updates.join(', ')} WHERE id = ?`,
-        values,
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
+    await getDb().execute({
+      sql: `UPDATE projects SET ${updates.join(', ')} WHERE id = ?`,
+      args: values,
     });
 
     // Get updated project
-    const updatedProject = await new Promise<Project>((resolve, reject) => {
-      db.get('SELECT * FROM projects WHERE id = ?', [id], (err, row: Project) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const updatedResult = await getDb().execute({
+      sql: 'SELECT * FROM projects WHERE id = ?',
+      args: [id],
     });
+    const updatedProject = updatedResult.rows[0] as unknown as Project;
 
     res.json({
       success: true,
@@ -223,12 +199,11 @@ export const archiveProject = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { archived = true } = req.body;
 
-    const project = await new Promise<Project>((resolve, reject) => {
-      db.get('SELECT * FROM projects WHERE id = ?', [id], (err, row: Project) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const checkResult = await getDb().execute({
+      sql: 'SELECT * FROM projects WHERE id = ?',
+      args: [id],
     });
+    const project = checkResult.rows[0] as unknown as Project | undefined;
 
     if (!project) {
       return res.status(404).json({
@@ -237,15 +212,9 @@ export const archiveProject = async (req: Request, res: Response) => {
       });
     }
 
-    await new Promise<void>((resolve, reject) => {
-      db.run(
-        'UPDATE projects SET archived = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [archived ? 1 : 0, id],
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
+    await getDb().execute({
+      sql: 'UPDATE projects SET archived = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      args: [archived ? 1 : 0, id],
     });
 
     res.json({
@@ -269,12 +238,11 @@ export const deleteProject = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const project = await new Promise<Project>((resolve, reject) => {
-      db.get('SELECT * FROM projects WHERE id = ?', [id], (err, row: Project) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const checkResult = await getDb().execute({
+      sql: 'SELECT * FROM projects WHERE id = ?',
+      args: [id],
     });
+    const project = checkResult.rows[0] as unknown as Project | undefined;
 
     if (!project) {
       return res.status(404).json({
@@ -284,11 +252,9 @@ export const deleteProject = async (req: Request, res: Response) => {
     }
 
     // Delete project (will cascade delete recordings, documents, etc.)
-    await new Promise<void>((resolve, reject) => {
-      db.run('DELETE FROM projects WHERE id = ?', [id], (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+    await getDb().execute({
+      sql: 'DELETE FROM projects WHERE id = ?',
+      args: [id],
     });
 
     res.json({
@@ -312,12 +278,11 @@ export const getProjectStats = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const project = await new Promise<Project>((resolve, reject) => {
-      db.get('SELECT * FROM projects WHERE id = ?', [id], (err, row: Project) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+    const checkResult = await getDb().execute({
+      sql: 'SELECT * FROM projects WHERE id = ?',
+      args: [id],
     });
+    const project = checkResult.rows[0] as unknown as Project | undefined;
 
     if (!project) {
       return res.status(404).json({
@@ -327,28 +292,18 @@ export const getProjectStats = async (req: Request, res: Response) => {
     }
 
     // Get total recordings count and duration
-    const recordingStats = await new Promise<any>((resolve, reject) => {
-      db.get(
-        'SELECT COUNT(*) as count, COALESCE(SUM(duration), 0) as total_duration FROM recordings WHERE project_id = ?',
-        [id],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
+    const recordingStatsResult = await getDb().execute({
+      sql: 'SELECT COUNT(*) as count, COALESCE(SUM(duration), 0) as total_duration FROM recordings WHERE project_id = ?',
+      args: [id],
     });
+    const recordingStats = recordingStatsResult.rows[0] as unknown as { count: number; total_duration: number };
 
     // Get document word count
-    const documentStats = await new Promise<any>((resolve, reject) => {
-      db.get(
-        'SELECT word_count FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
-        [id],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
+    const documentStatsResult = await getDb().execute({
+      sql: 'SELECT word_count FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
+      args: [id],
     });
+    const documentStats = documentStatsResult.rows[0] as unknown as { word_count: number } | undefined;
 
     // Calculate estimated pages (250 words per page)
     const wordCount = documentStats?.word_count || 0;

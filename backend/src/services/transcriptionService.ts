@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { db } from '../config/database';
+import { getDb } from '../config/database';
 import { Recording, Transcription } from '../types/models';
 import { formatTranscription } from './textFormattingService';
 import { getSocketIO } from '../config/socket';
@@ -44,13 +44,12 @@ export const transcribeAudio = async (
   let statusUpdated = false;
   try {
     // Get recording details
-    const recording = await new Promise<Recording>((resolve, reject) => {
-      db.get('SELECT * FROM recordings WHERE id = ?', [recordingId], (err, row: Recording) => {
-        if (err) reject(err);
-        else if (!row) reject(new Error('Recording not found'));
-        else resolve(row);
-      });
+    const recordingResult = await getDb().execute({
+      sql: 'SELECT * FROM recordings WHERE id = ?',
+      args: [recordingId],
     });
+    const recording = recordingResult.rows[0] as unknown as Recording | undefined;
+    if (!recording) throw new Error('Recording not found');
 
     // Update recording status to 'transcribing'
     await updateRecordingStatus(recordingId, 'transcribing');
@@ -153,38 +152,27 @@ export const transcribeAudio = async (
  * Create transcription record in database
  */
 const createTranscription = async (data: Omit<Transcription, 'id' | 'created_at' | 'updated_at'>): Promise<Transcription> => {
-  return new Promise((resolve, reject) => {
-    db.run(
-      `INSERT INTO transcriptions (recording_id, raw_text, formatted_text, word_count, language, confidence)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [data.recording_id, data.raw_text, data.formatted_text, data.word_count, data.language, data.confidence],
-      function(err) {
-        if (err) {
-          reject(err);
-        } else {
-          db.get('SELECT * FROM transcriptions WHERE id = ?', [this.lastID], (err, row: Transcription) => {
-            if (err) reject(err);
-            else resolve(row);
-          });
-        }
-      }
-    );
+  const insertResult = await getDb().execute({
+    sql: `INSERT INTO transcriptions (recording_id, raw_text, formatted_text, word_count, language, confidence)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [data.recording_id, data.raw_text ?? null, data.formatted_text ?? null, data.word_count ?? null, data.language ?? null, data.confidence ?? null],
   });
+
+  const newId = Number(insertResult.lastInsertRowid);
+  const result = await getDb().execute({
+    sql: 'SELECT * FROM transcriptions WHERE id = ?',
+    args: [newId],
+  });
+  return result.rows[0] as unknown as Transcription;
 };
 
 /**
  * Update recording status
  */
 const updateRecordingStatus = async (recordingId: number, status: string): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    db.run(
-      'UPDATE recordings SET status = ? WHERE id = ?',
-      [status, recordingId],
-      (err) => {
-        if (err) reject(err);
-        else resolve();
-      }
-    );
+  await getDb().execute({
+    sql: 'UPDATE recordings SET status = ? WHERE id = ?',
+    args: [status, recordingId],
   });
 };
 
@@ -199,16 +187,11 @@ const countWords = (text: string): number => {
  * Get transcription by recording ID
  */
 export const getTranscriptionByRecordingId = async (recordingId: number): Promise<Transcription | null> => {
-  return new Promise((resolve, reject) => {
-    db.get(
-      'SELECT * FROM transcriptions WHERE recording_id = ? ORDER BY created_at DESC LIMIT 1',
-      [recordingId],
-      (err, row: Transcription) => {
-        if (err) reject(err);
-        else resolve(row || null);
-      }
-    );
+  const result = await getDb().execute({
+    sql: 'SELECT * FROM transcriptions WHERE recording_id = ? ORDER BY created_at DESC LIMIT 1',
+    args: [recordingId],
   });
+  return (result.rows[0] as unknown as Transcription) || null;
 };
 
 /**
@@ -220,22 +203,16 @@ export const updateTranscription = async (
 ): Promise<Transcription> => {
   const wordCount = countWords(formattedText);
 
-  return new Promise((resolve, reject) => {
-    db.run(
-      `UPDATE transcriptions
-       SET formatted_text = ?, word_count = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [formattedText, wordCount, transcriptionId],
-      (err) => {
-        if (err) {
-          reject(err);
-        } else {
-          db.get('SELECT * FROM transcriptions WHERE id = ?', [transcriptionId], (err, row: Transcription) => {
-            if (err) reject(err);
-            else resolve(row);
-          });
-        }
-      }
-    );
+  await getDb().execute({
+    sql: `UPDATE transcriptions
+          SET formatted_text = ?, word_count = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?`,
+    args: [formattedText, wordCount, transcriptionId],
   });
+
+  const result = await getDb().execute({
+    sql: 'SELECT * FROM transcriptions WHERE id = ?',
+    args: [transcriptionId],
+  });
+  return result.rows[0] as unknown as Transcription;
 };
