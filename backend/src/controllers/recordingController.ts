@@ -193,7 +193,11 @@ export const deleteRecording = async (req: Request, res: Response) => {
     }
 
     // Delete file from disk
-    const filePath = path.join('./uploads/audio', recording.filename);
+    const UPLOAD_ROOT = path.resolve('./uploads/audio');
+    const filePath = path.resolve(UPLOAD_ROOT, recording.filename);
+    if (!filePath.startsWith(UPLOAD_ROOT + path.sep)) {
+      return res.status(400).json({ success: false, error: 'Invalid filename' });
+    }
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
@@ -238,7 +242,11 @@ export const downloadRecording = async (req: Request, res: Response) => {
       });
     }
 
-    const filePath = path.join('./uploads/audio', recording.filename);
+    const UPLOAD_ROOT = path.resolve('./uploads/audio');
+    const filePath = path.resolve(UPLOAD_ROOT, recording.filename);
+    if (!filePath.startsWith(UPLOAD_ROOT + path.sep)) {
+      return res.status(400).json({ success: false, error: 'Invalid filename' });
+    }
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({
