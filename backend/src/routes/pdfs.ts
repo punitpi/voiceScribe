@@ -5,31 +5,13 @@ import {
   downloadPDF,
   deletePDFById,
 } from '../controllers/pdfController';
+import { requireAuth } from '../middleware/auth';
 
 const router = express.Router();
 
-/**
- * POST /api/pdfs/document/:documentId/generate
- * Generate PDF from document
- */
-router.post('/document/:documentId/generate', generatePDFFromDocument);
-
-/**
- * GET /api/pdfs/document/:documentId
- * Get all PDFs for a document
- */
-router.get('/document/:documentId', getPDFsByDocument);
-
-/**
- * GET /api/pdfs/:id/download
- * Download a PDF file
- */
-router.get('/:id/download', downloadPDF);
-
-/**
- * DELETE /api/pdfs/:id
- * Delete a PDF
- */
-router.delete('/:id', deletePDFById);
+router.post('/document/:documentId/generate', requireAuth, generatePDFFromDocument);
+router.get('/document/:documentId', requireAuth, getPDFsByDocument);
+router.get('/:id/download', requireAuth, downloadPDF);
+router.delete('/:id', requireAuth, deletePDFById);
 
 export default router;
