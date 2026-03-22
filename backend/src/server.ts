@@ -7,9 +7,14 @@ import path from 'path';
 import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import { initDatabase, getDb } from './config/database';
+import { authService } from './services/authService';
 import { initializeSocketIO } from './config/socket';
 import { logger } from './config/logger';
+import cookieParser from 'cookie-parser';
+import passport from 'passport';
 import './services/queueService'; // Start Bull transcription queue worker
+import authRouter from './routes/auth';
+import adminRouter from './routes/admin';
 import recordingsRouter from './routes/recordings';
 import projectsRouter from './routes/projects';
 import transcriptionsRouter from './routes/transcriptions';
@@ -61,6 +66,10 @@ app.use(cors({
   credentials: true
 }));
 
+// Cookie parsing + auth middleware
+app.use(cookieParser());
+app.use(passport.initialize());
+
 // Body parsing middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -91,6 +100,12 @@ app.get('/health', async (req: Request, res: Response) => {
     environment: process.env.NODE_ENV ?? 'development',
   });
 });
+
+// Auth routes (public)
+app.use('/auth', authRouter);
+
+// Admin routes
+app.use('/admin', adminRouter);
 
 // API routes
 app.use('/api/projects', projectsRouter);
@@ -135,6 +150,9 @@ const startServer = async () => {
   try {
     // Initialize database
     await initDatabase();
+
+    // Seed admin user if no users exist
+    await authService.seedAdminIfEmpty();
 
     // Initialize Socket.IO
     initializeSocketIO(httpServer);

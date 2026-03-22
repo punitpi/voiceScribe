@@ -8,14 +8,17 @@ import {
   getDictionary
 } from '../controllers/spellCheckController';
 import { requireAuth } from '../middleware/auth';
+import { requireFeatureFlag } from '../middleware/featureFlag';
 
 const router = Router();
 
-router.post('/', requireAuth, checkSpelling);
-router.post('/correct', requireAuth, autoCorrect);
-router.post('/stats', requireAuth, getStats);
-router.post('/dictionary/add', requireAuth, addWord);
-router.delete('/dictionary/remove', requireAuth, removeWord);
-router.get('/dictionary', requireAuth, getDictionary);
+const spellCheckFlag = requireFeatureFlag('spell_check');
+
+router.post('/', requireAuth, spellCheckFlag, checkSpelling);
+router.post('/correct', requireAuth, spellCheckFlag, autoCorrect);
+router.post('/stats', requireAuth, spellCheckFlag, getStats);
+router.post('/dictionary/add', requireAuth, spellCheckFlag, addWord);
+router.delete('/dictionary/remove', requireAuth, spellCheckFlag, removeWord);
+router.get('/dictionary', requireAuth, spellCheckFlag, getDictionary);
 
 export default router;
