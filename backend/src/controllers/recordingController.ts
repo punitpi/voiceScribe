@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { getDb } from '../config/database';
+import { analyticsService } from '../services/analyticsService';
 import { Recording } from '../types/models';
 import path from 'path';
 import { storageService } from '../services/storageService';
@@ -83,6 +84,7 @@ export const uploadRecording = async (req: Request, res: Response) => {
     });
     const createdRecording = createdResult.rows[0] as unknown as Recording;
 
+    analyticsService.track(req.user?.id ?? null, 'recording_uploaded', { entityType: 'recording', entityId: newId });
     res.status(201).json({
       success: true,
       data: createdRecording,

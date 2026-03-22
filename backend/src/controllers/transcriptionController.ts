@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getTranscriptionByRecordingId, updateTranscription } from '../services/transcriptionService';
 import { enqueueTranscription } from '../services/queueService';
+import { analyticsService } from '../services/analyticsService';
 import { quickFormat } from '../services/textFormattingService';
 
 /**
@@ -12,6 +13,7 @@ export const startTranscription = async (req: Request, res: Response) => {
 
     // Enqueue transcription job (Bull queue, max 2 concurrent)
     await enqueueTranscription(parseInt(recordingId));
+    analyticsService.track(req.user?.id ?? null, 'transcription_started', { entityType: 'recording', entityId: parseInt(recordingId) });
 
     res.status(202).json({
       success: true,

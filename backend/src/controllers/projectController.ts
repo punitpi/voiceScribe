@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { logger } from '../config/logger';
+import { analyticsService } from '../services/analyticsService';
 import { Project, CreateProjectRequest, UpdateProjectRequest } from '../types/models';
 
 export const createProject = async (req: Request, res: Response) => {
@@ -31,6 +32,7 @@ export const createProject = async (req: Request, res: Response) => {
       args: [newId, ''],
     });
 
+    analyticsService.track(userId, 'project_created', { entityType: 'project', entityId: newId });
     res.status(201).json({ success: true, data: project, message: 'Project created successfully' });
   } catch (error: any) {
     logger.error('Error creating project', { error: error.message });
@@ -171,7 +173,7 @@ export const deleteProject = async (req: Request, res: Response) => {
     }
 
     await getDb().execute({ sql: 'DELETE FROM projects WHERE id = ?', args: [id] });
-
+    analyticsService.track(userId, 'project_deleted', { entityType: 'project', entityId: Number(id) });
     res.json({ success: true, message: 'Project deleted successfully' });
   } catch (error: any) {
     logger.error('Error deleting project', { error: error.message });

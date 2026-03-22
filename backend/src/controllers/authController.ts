@@ -3,6 +3,7 @@ import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { authService } from '../services/authService';
 import { featureFlagService } from '../services/featureFlagService';
+import { analyticsService } from '../services/analyticsService';
 import { logger } from '../config/logger';
 
 const COOKIE_OPTS = {
@@ -45,6 +46,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
     await authService.register(email, password, name);
+    analyticsService.track(null, 'user_registered', { metadata: { email } });
     res.status(201).json({ success: true, message: 'Registration successful. Your account is pending admin approval.' });
   } catch (err: any) {
     const status = err.message === 'Email already registered' ? 409 : 500;
@@ -60,6 +62,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
     const { accessToken, user } = await authService.login(email, password);
+    analyticsService.track(user.id, 'user_login');
     res.cookie('access_token', accessToken, COOKIE_OPTS);
     res.json({ success: true, data: { user } });
   } catch (err: any) {

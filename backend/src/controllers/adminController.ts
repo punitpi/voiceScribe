@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getDb } from '../config/database';
 import { featureFlagService } from '../services/featureFlagService';
+import { analyticsService } from '../services/analyticsService';
 import { logger } from '../config/logger';
 
 export const getUsers = async (_req: Request, res: Response): Promise<void> => {
@@ -22,6 +23,7 @@ export const approveUser = async (req: Request, res: Response): Promise<void> =>
       sql: "UPDATE users SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       args: [id],
     });
+    analyticsService.track(Number(id), 'user_approved', { metadata: { approved_by: req.user?.id } });
     res.json({ success: true, message: 'User approved' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -35,6 +37,7 @@ export const rejectUser = async (req: Request, res: Response): Promise<void> => 
       sql: "UPDATE users SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       args: [id],
     });
+    analyticsService.track(Number(id), 'user_rejected', { metadata: { rejected_by: req.user?.id } });
     res.json({ success: true, message: 'User rejected' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
