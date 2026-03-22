@@ -77,6 +77,16 @@ export const updateDocument = async (req: Request, res: Response) => {
       args: [projectId, content, newVersion, wordCount, characterCount],
     });
 
+    // Cap at 10 versions — delete oldest beyond limit
+    await getDb().execute({
+      sql: `DELETE FROM documents
+            WHERE project_id = ?
+            AND id NOT IN (
+              SELECT id FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 10
+            )`,
+      args: [projectId, projectId],
+    });
+
     // Get the new document
     const newDocResult = await getDb().execute({
       sql: 'SELECT * FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 1',
@@ -106,38 +116,25 @@ export const combineTranscriptions = async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
 
-    // Get all completed recordings for the project
-    const recordingsResult = await getDb().execute({
-      sql: `SELECT r.id, r.created_at
-            FROM recordings r
+    // Single JOIN query — fixes N+1 (was 1+N queries, now always 1)
+    const transcriptionsResult = await getDb().execute({
+      sql: `SELECT COALESCE(t.formatted_text, t.raw_text) AS text
+            FROM transcriptions t
+            INNER JOIN recordings r ON r.id = t.recording_id
             WHERE r.project_id = ? AND r.status = 'completed'
             ORDER BY r.created_at ASC`,
       args: [projectId],
     });
-    const recordings = recordingsResult.rows as unknown as Array<{ id: number; created_at: string }>;
 
-    if (recordings.length === 0) {
+    const transcriptionTexts = transcriptionsResult.rows
+      .map(row => (row as unknown as { text: string }).text)
+      .filter(t => t && t.trim().length > 0);
+
+    if (transcriptionTexts.length === 0) {
       return res.status(400).json({
         success: false,
         error: 'No completed recordings found'
       });
-    }
-
-    // Get transcriptions for all recordings
-    const transcriptionTexts: string[] = [];
-    for (const recording of recordings) {
-      const transcriptionResult = await getDb().execute({
-        sql: 'SELECT formatted_text, raw_text FROM transcriptions WHERE recording_id = ?',
-        args: [recording.id],
-      });
-      const transcription = transcriptionResult.rows[0] as unknown as { formatted_text: string; raw_text: string } | undefined;
-
-      if (transcription) {
-        const text = transcription.formatted_text || transcription.raw_text;
-        if (text) {
-          transcriptionTexts.push(text);
-        }
-      }
     }
 
     // Combine all transcriptions with paragraph breaks
@@ -167,6 +164,16 @@ export const combineTranscriptions = async (req: Request, res: Response) => {
       sql: `INSERT INTO documents (project_id, content, version, word_count, character_count)
             VALUES (?, ?, ?, ?, ?)`,
       args: [projectId, combinedContent, newVersion, wordCount, characterCount],
+    });
+
+    // Cap at 10 versions
+    await getDb().execute({
+      sql: `DELETE FROM documents
+            WHERE project_id = ?
+            AND id NOT IN (
+              SELECT id FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 10
+            )`,
+      args: [projectId, projectId],
     });
 
     // Get the new document
@@ -212,40 +219,27 @@ export const appendNewTranscriptions = async (req: Request, res: Response) => {
       });
     }
 
-    // Get recordings completed after the last document update
-    const recordingsResult = await getDb().execute({
-      sql: `SELECT r.id, r.created_at
-            FROM recordings r
+    // Single JOIN query for new transcriptions — fixes N+1
+    const newTranscriptionsResult = await getDb().execute({
+      sql: `SELECT COALESCE(t.formatted_text, t.raw_text) AS text
+            FROM transcriptions t
+            INNER JOIN recordings r ON r.id = t.recording_id
             WHERE r.project_id = ?
               AND r.status = 'completed'
               AND r.created_at > ?
             ORDER BY r.created_at ASC`,
       args: [projectId, currentDoc.updated_at ?? currentDoc.created_at ?? null],
     });
-    const recordings = recordingsResult.rows as unknown as Array<{ id: number; created_at: string }>;
 
-    if (recordings.length === 0) {
+    const newTranscriptionTexts = newTranscriptionsResult.rows
+      .map(row => (row as unknown as { text: string }).text)
+      .filter(t => t && t.trim().length > 0);
+
+    if (newTranscriptionTexts.length === 0) {
       return res.status(400).json({
         success: false,
         error: 'No new transcriptions found'
       });
-    }
-
-    // Get transcriptions for new recordings
-    const newTranscriptionTexts: string[] = [];
-    for (const recording of recordings) {
-      const transcriptionResult = await getDb().execute({
-        sql: 'SELECT formatted_text, raw_text FROM transcriptions WHERE recording_id = ?',
-        args: [recording.id],
-      });
-      const transcription = transcriptionResult.rows[0] as unknown as { formatted_text: string; raw_text: string } | undefined;
-
-      if (transcription) {
-        const text = transcription.formatted_text || transcription.raw_text;
-        if (text) {
-          newTranscriptionTexts.push(text);
-        }
-      }
     }
 
     // Append new transcriptions to existing content
@@ -264,6 +258,16 @@ export const appendNewTranscriptions = async (req: Request, res: Response) => {
       sql: `INSERT INTO documents (project_id, content, version, word_count, character_count)
             VALUES (?, ?, ?, ?, ?)`,
       args: [projectId, appendedContent, newVersion, wordCount, characterCount],
+    });
+
+    // Cap at 10 versions
+    await getDb().execute({
+      sql: `DELETE FROM documents
+            WHERE project_id = ?
+            AND id NOT IN (
+              SELECT id FROM documents WHERE project_id = ? ORDER BY version DESC LIMIT 10
+            )`,
+      args: [projectId, projectId],
     });
 
     // Get the new document

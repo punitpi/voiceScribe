@@ -1,6 +1,7 @@
 /**
  * AI-powered Spell Checking Service using OpenAI
  */
+import crypto from 'crypto';
 import axios from 'axios';
 import { getDb } from '../config/database';
 
@@ -23,6 +24,23 @@ interface SpellCheckError {
   inCustomDictionary: boolean;
 }
 
+// In-memory cache for spell check results (5-minute TTL)
+interface CacheEntry { result: SpellCheckError[]; ts: number; }
+const spellCheckCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function getCacheKey(text: string, language: string): string {
+  return crypto.createHash('sha256').update(`${language}:${text}`).digest('hex');
+}
+
+// Periodically evict expired entries — .unref() so it doesn't prevent process exit
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of spellCheckCache.entries()) {
+    if (now - entry.ts > CACHE_TTL_MS) spellCheckCache.delete(key);
+  }
+}, 10 * 60 * 1000).unref();
+
 /**
  * Check text for spelling errors using OpenAI
  */
@@ -32,6 +50,13 @@ export const checkText = async (
   projectId: number | null = null,
   language: 'en' | 'kn' = 'en'
 ): Promise<SpellCheckError[]> => {
+  // Cache lookup — skip for project-specific checks since custom dict varies per project
+  const cacheKey = getCacheKey(text, language);
+  if (!projectId) {
+    const cached = spellCheckCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.result;
+  }
+
   try {
     // Get custom dictionary words
     const customWords = await getCustomDictionary(userId, projectId);
@@ -106,10 +131,17 @@ Rules:
     }
 
     // Add inCustomDictionary flag
-    return errors.map(error => ({
+    const result = errors.map(error => ({
       ...error,
       inCustomDictionary: false
     }));
+
+    // Store in cache (only when no project-specific dictionary)
+    if (!projectId) {
+      spellCheckCache.set(cacheKey, { result, ts: Date.now() });
+    }
+
+    return result;
 
   } catch (error: any) {
     console.error('Spell check error:', error.response?.data || error.message);
