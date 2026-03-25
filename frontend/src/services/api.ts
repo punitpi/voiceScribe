@@ -78,7 +78,7 @@ export const projectsApi = {
 
 // Recordings API
 export const recordingsApi = {
-  upload: (projectId: number, audioFile: File, language: 'en' | 'kn' = 'en') => {
+  upload: (projectId: number, audioFile: File, language: 'en' | 'kn' | 'en-kn' = 'en') => {
     const formData = new FormData();
     formData.append('audio', audioFile);
     formData.append('project_id', projectId.toString());

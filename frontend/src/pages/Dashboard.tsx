@@ -31,7 +31,7 @@ export default function Dashboard() {
     title: '',
     author_name: '',
     description: '',
-    language: 'en' as 'en' | 'kn',
+    language: 'en' as 'en' | 'kn' | 'en-kn',
   });
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -65,7 +65,7 @@ export default function Dashboard() {
       if (response.data.success && response.data.data) {
         setProjects([response.data.data, ...projects]);
         setCreateDialogOpen(false);
-        setNewProject({ title: '', author_name: '', description: '', language: 'en' });
+        setNewProject({ title: '', author_name: '', description: '', language: 'en' as 'en' | 'kn' | 'en-kn' });
         navigate(`/project/${response.data.data.id}`);
       }
     } catch (err: unknown) {
@@ -320,11 +320,12 @@ export default function Dashboard() {
             select
             SelectProps={{ native: true }}
             value={newProject.language}
-            onChange={(e) => setNewProject({ ...newProject, language: e.target.value as 'en' | 'kn' })}
+            onChange={(e) => setNewProject({ ...newProject, language: e.target.value as 'en' | 'kn' | 'en-kn' })}
             disabled={creating}
           >
             <option value="en">English</option>
             <option value="kn">ಕನ್ನಡ (Kannada)</option>
+            <option value="en-kn">English + ಕನ್ನಡ (Mixed)</option>
           </TextField>
         </DialogContent>
         <DialogActions>

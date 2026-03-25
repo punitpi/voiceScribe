@@ -2,8 +2,14 @@ import { Box } from '@mui/material';
 import { COLORS } from '../theme/theme';
 
 interface LanguagePillProps {
-  language: 'en' | 'kn';
+  language: 'en' | 'kn' | 'en-kn';
 }
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English',
+  kn: 'ಕನ್ನಡ',
+  'en-kn': 'English + ಕನ್ನಡ',
+};
 
 export default function LanguagePill({ language }: LanguagePillProps) {
   return (
@@ -21,7 +27,7 @@ export default function LanguagePill({ language }: LanguagePillProps) {
         display: 'inline-block',
       }}
     >
-      {language === 'kn' ? 'ಕನ್ನಡ' : 'English'}
+      {LANGUAGE_LABELS[language] ?? language}
     </Box>
   );
 }

@@ -7,7 +7,7 @@ import { COLORS } from '../theme/theme';
 
 interface AudioUploaderProps {
   projectId: number;
-  language: 'en' | 'kn';
+  language: 'en' | 'kn' | 'en-kn';
   onUploadComplete: () => void;
 }
 

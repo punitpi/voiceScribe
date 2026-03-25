@@ -9,6 +9,24 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const CHUNK_DURATION = 25; // seconds, under Sarvam's 30s REST limit
 
+// Supported book output languages and their Sarvam language codes.
+// 'en-kn' mixed mode uses kn-IN as the base so Kannada script is preserved;
+// codemix mode handles English words inline.
+const LANGUAGE_CODE_MAP: Record<string, string> = {
+  en: 'en-IN',
+  kn: 'kn-IN',
+  'en-kn': 'kn-IN',
+  hi: 'hi-IN',
+  ta: 'ta-IN',
+  te: 'te-IN',
+  ml: 'ml-IN',
+  mr: 'mr-IN',
+  bn: 'bn-IN',
+  gu: 'gu-IN',
+  pa: 'pa-IN',
+  od: 'od-IN',
+};
+
 const getSarvamClient = () => {
   const key = process.env.SARVAM_API_KEY;
   if (!key) throw new Error('SARVAM_API_KEY is not configured');
@@ -45,36 +63,38 @@ export const chunkAudioFile = (inputPath: string): Promise<{ chunks: string[]; t
   });
 };
 
-// Transcribe a single chunk (must be ≤30s)
+// Transcribe a single chunk (must be ≤30s).
+// Always uses 'codemix' mode so mixed/foreign speech is captured and output
+// in the target language's script rather than being dropped.
 const transcribeChunk = async (
   client: SarvamAIClient,
   chunkPath: string,
-  language: 'en' | 'kn',
-  mode: 'codemix' | 'transcribe'
+  languageCode: string,
 ): Promise<string> => {
   const response = await client.speechToText.transcribe({
     file: fs.createReadStream(chunkPath) as any,
     model: 'saaras:v3',
-    mode,
-    language_code: language === 'kn' ? 'kn-IN' : 'en-IN',
+    mode: 'codemix',
+    language_code: languageCode as any,
   });
   return (response as any).transcript ?? '';
 };
 
 // Main export: transcribe full audio file with chunking.
+// language = book's output language code (e.g. 'en', 'kn', 'hi').
 // Chunks are processed sequentially to respect Sarvam API rate limits.
 export const transcribeWithSarvam = async (
   audioFilePath: string,
-  language: 'en' | 'kn'
+  language: string
 ): Promise<string> => {
-  const mode = language === 'kn' ? 'transcribe' : 'codemix';
+  const languageCode = LANGUAGE_CODE_MAP[language] ?? 'en-IN';
   const client = getSarvamClient();
   const { chunks, tempDir } = await chunkAudioFile(audioFilePath);
 
   try {
     const parts: string[] = [];
     for (const chunk of chunks) {
-      parts.push(await transcribeChunk(client, chunk, language, mode));
+      parts.push(await transcribeChunk(client, chunk, languageCode));
     }
     return parts.join(' ').trim();
   } finally {

@@ -3,7 +3,7 @@ export interface Project {
   id?: number;
   title: string;
   author_name?: string;
-  language: 'en' | 'kn';
+  language: 'en' | 'kn' | 'en-kn';
   description?: string;
   created_at?: string;
   updated_at?: string;
@@ -17,7 +17,7 @@ export interface Recording {
   original_filename?: string;
   duration?: number;
   file_size?: number;
-  language: 'en' | 'kn';
+  language: 'en' | 'kn' | 'en-kn';
   status: 'pending' | 'transcribing' | 'completed' | 'failed';
   created_at?: string;
 }

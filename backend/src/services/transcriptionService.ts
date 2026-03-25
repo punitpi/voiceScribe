@@ -69,7 +69,7 @@ export const transcribeAudio = async (
 
         emitProgress('transcription:progress', { recordingId, status: 'transcribing', progress: 25, message: 'Sending audio to AI transcription service...' });
 
-        const language = (recording.language === 'kn' ? 'kn' : 'en') as 'en' | 'kn';
+        const language = recording.language ?? 'en';
         const text = await transcribeWithSarvam(audioFilePath, language);
 
         emitProgress('transcription:progress', { recordingId, status: 'transcribing', progress: 50, message: 'Transcription complete, applying formatting...' });

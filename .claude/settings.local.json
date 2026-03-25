@@ -20,7 +20,8 @@
       "Bash(/opt/homebrew/bin/npm install --prefix /Users/puneethprakash/Documents/repo/mine/voiceScribe/backend form-data)",
       "Bash(lsof:*)",
       "Bash(xargs kill:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []

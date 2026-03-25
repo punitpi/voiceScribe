@@ -7,7 +7,7 @@ import { COLORS } from '../theme/theme';
 
 interface AudioRecorderProps {
   projectId: number;
-  language: 'en' | 'kn';
+  language: 'en' | 'kn' | 'en-kn';
   onRecordingUploaded: () => void;
 }
 
