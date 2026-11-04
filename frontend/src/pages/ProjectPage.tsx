@@ -184,7 +184,7 @@ export default function ProjectPage() {
             onClick={() => navigate(`/project/${id}/document`)}
             sx={{ flexShrink: 0 }}
           >
-            Edit Document
+            View Document
           </Button>
         </Box>
       </Box>

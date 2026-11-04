@@ -4,6 +4,8 @@ import { Box, Container, Typography, IconButton, Tooltip, Button } from '@mui/ma
 import HomeIcon from '@mui/icons-material/Home';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import AddIcon from '@mui/icons-material/Add';
+import RemoveIcon from '@mui/icons-material/Remove';
 import { COLORS } from '../theme/theme';
 import { useAuth } from '../contexts/AuthContext';
 import SettingsDialog from './SettingsDialog';
@@ -12,12 +14,33 @@ interface LayoutProps {
   children: ReactNode;
 }
 
+const ZOOM_STEP = 10;
+const ZOOM_MIN = 80;
+const ZOOM_MAX = 200;
+
 export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const isHome = location.pathname === '/';
   const { isAdmin } = useAuth();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [zoom, setZoom] = useState(100);
+
+  const handleZoomIn = () => {
+    setZoom((z) => {
+      const next = Math.min(z + ZOOM_STEP, ZOOM_MAX);
+      document.documentElement.style.fontSize = `${next}%`;
+      return next;
+    });
+  };
+
+  const handleZoomOut = () => {
+    setZoom((z) => {
+      const next = Math.max(z - ZOOM_STEP, ZOOM_MIN);
+      document.documentElement.style.fontSize = `${next}%`;
+      return next;
+    });
+  };
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -91,6 +114,35 @@ export default function Layout({ children }: LayoutProps) {
               >
                 Your story, your voice
               </Typography>
+
+              {/* Zoom controls */}
+              <Box sx={{ display: 'flex', alignItems: 'center', border: `1px solid ${COLORS.border}`, borderRadius: '6px', overflow: 'hidden' }}>
+                <Tooltip title="Zoom out (make text smaller)">
+                  <IconButton
+                    onClick={handleZoomOut}
+                    size="small"
+                    aria-label="Zoom out"
+                    disabled={zoom <= ZOOM_MIN}
+                    sx={{ width: 36, height: 36, borderRadius: 0, '& .MuiSvgIcon-root': { fontSize: '1.1rem' } }}
+                  >
+                    <RemoveIcon />
+                  </IconButton>
+                </Tooltip>
+                <Typography sx={{ fontSize: '0.78rem', fontFamily: '"DM Mono", monospace', color: COLORS.inkFaint, px: 1, minWidth: 38, textAlign: 'center', userSelect: 'none' }}>
+                  {zoom}%
+                </Typography>
+                <Tooltip title="Zoom in (make text bigger)">
+                  <IconButton
+                    onClick={handleZoomIn}
+                    size="small"
+                    aria-label="Zoom in"
+                    disabled={zoom >= ZOOM_MAX}
+                    sx={{ width: 36, height: 36, borderRadius: 0, '& .MuiSvgIcon-root': { fontSize: '1.1rem' } }}
+                  >
+                    <AddIcon />
+                  </IconButton>
+                </Tooltip>
+              </Box>
 
               {isAdmin && (
                 <Tooltip title="Admin Panel">

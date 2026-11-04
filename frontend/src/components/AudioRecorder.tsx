@@ -26,23 +26,27 @@ export default function AudioRecorder({ projectId, language, onRecordingUploaded
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   };
 
-  const { status, startRecording, stopRecording, mediaBlobUrl, clearBlobUrl } = useReactMediaRecorder({
+  const { status, startRecording, stopRecording, clearBlobUrl } = useReactMediaRecorder({
     audio: true,
     onStart: () => {
       setRecordingTime(0);
       timerRef.current = setInterval(() => setRecordingTime((p) => p + 1), 1000);
     },
-    onStop: stopTimer,
+    onStop: (blobUrl) => {
+      stopTimer();
+      // Auto-upload as soon as recording stops
+      handleUploadBlob(blobUrl);
+    },
   });
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
-  const handleUpload = async () => {
-    if (!mediaBlobUrl) return;
+  const handleUploadBlob = async (blobUrl: string) => {
+    if (!blobUrl) return;
     try {
       setUploading(true);
       setUploadError(null);
-      const blob = await (await fetch(mediaBlobUrl)).blob();
+      const blob = await (await fetch(blobUrl)).blob();
       const file = new File([blob], `recording-${Date.now()}.webm`, { type: 'audio/webm' });
       await recordingsApi.upload(projectId, file, language);
       clearBlobUrl();
@@ -55,14 +59,7 @@ export default function AudioRecorder({ projectId, language, onRecordingUploaded
     }
   };
 
-  const handleClear = () => {
-    clearBlobUrl();
-    setRecordingTime(0);
-    setUploadError(null);
-  };
-
   const isRecording = status === 'recording';
-  const hasRecording = !!mediaBlobUrl;
 
   return (
     <Box>
@@ -73,39 +70,50 @@ export default function AudioRecorder({ projectId, language, onRecordingUploaded
       )}
 
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, py: 3 }}>
-        {/* Idle: big mic button */}
-        {!isRecording && !hasRecording && (
+        {/* Idle or uploading: big mic button */}
+        {!isRecording && (
           <Box sx={{ textAlign: 'center' }}>
-            <Typography variant="body2" sx={{ color: COLORS.inkFaint, mb: 4, fontStyle: 'italic' }}>
-              Press the microphone to begin speaking
-            </Typography>
-            <Box
-              onClick={startRecording}
-              className="recording-pulse"
-              sx={{
-                width: 100,
-                height: 100,
-                borderRadius: '50%',
-                backgroundColor: COLORS.gold,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                mx: 'auto',
-                transition: 'transform 0.2s ease, background-color 0.2s ease',
-                '&:hover': {
-                  backgroundColor: '#92400E',
-                  transform: 'scale(1.05)',
-                },
-              }}
-            >
-              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="9" y="2" width="6" height="12" rx="3" fill="white"/>
-                <path d="M5 11C5 14.866 8.13401 18 12 18C15.866 18 19 14.866 19 11" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                <line x1="12" y1="18" x2="12" y2="22" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                <line x1="8" y1="22" x2="16" y2="22" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </Box>
+            {uploading ? (
+              <>
+                <CircularProgress size={48} sx={{ mb: 2 }} />
+                <Typography variant="body2" sx={{ color: COLORS.inkFaint, fontStyle: 'italic' }}>
+                  Saving recording…
+                </Typography>
+              </>
+            ) : (
+              <>
+                <Typography variant="body2" sx={{ color: COLORS.inkFaint, mb: 4, fontStyle: 'italic' }}>
+                  Press the microphone to begin speaking
+                </Typography>
+                <Box
+                  onClick={startRecording}
+                  className="recording-pulse"
+                  sx={{
+                    width: 100,
+                    height: 100,
+                    borderRadius: '50%',
+                    backgroundColor: COLORS.gold,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    mx: 'auto',
+                    transition: 'transform 0.2s ease, background-color 0.2s ease',
+                    '&:hover': {
+                      backgroundColor: '#92400E',
+                      transform: 'scale(1.05)',
+                    },
+                  }}
+                >
+                  <svg width="44" height="44" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="9" y="2" width="6" height="12" rx="3" fill="white"/>
+                    <path d="M5 11C5 14.866 8.13401 18 12 18C15.866 18 19 14.866 19 11" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                    <line x1="12" y1="18" x2="12" y2="22" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                    <line x1="8" y1="22" x2="16" y2="22" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                </Box>
+              </>
+            )}
           </Box>
         )}
 
@@ -176,31 +184,8 @@ export default function AudioRecorder({ projectId, language, onRecordingUploaded
               <Box sx={{ width: 22, height: 22, borderRadius: '3px', backgroundColor: '#fff' }} />
             </Button>
             <Typography variant="body2" sx={{ mt: 2, color: COLORS.inkFaint }}>
-              Click to stop
+              Click to stop — recording will save automatically
             </Typography>
-          </Box>
-        )}
-
-        {/* Preview state */}
-        {hasRecording && !isRecording && (
-          <Box sx={{ textAlign: 'center', width: '100%', maxWidth: 480 }}>
-            <Typography variant="body2" sx={{ color: COLORS.inkFaint, mb: 2, fontStyle: 'italic' }}>
-              Recording ready — {formatTime(recordingTime)}
-            </Typography>
-            <audio src={mediaBlobUrl} controls style={{ width: '100%', marginBottom: '20px' }} />
-            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
-              <Button
-                variant="contained"
-                onClick={handleUpload}
-                disabled={uploading}
-                startIcon={uploading ? <CircularProgress size={18} sx={{ color: '#fff' }} /> : undefined}
-              >
-                {uploading ? 'Saving…' : 'Save recording'}
-              </Button>
-              <Button variant="outlined" onClick={handleClear} disabled={uploading}>
-                Discard
-              </Button>
-            </Box>
           </Box>
         )}
       </Box>

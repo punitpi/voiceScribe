@@ -14,7 +14,7 @@ import {
   DialogContentText,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { projectsApi, documentsApi, pdfsApi } from '../services/api';
+import { projectsApi, documentsApi, pdfsApi, recordingsApi } from '../services/api';
 import type { Project, Document, PDFSettings } from '../types';
 import { getErrorMessage } from '../utils/getErrorMessage';
 import TextEditor from '../components/TextEditor';
@@ -36,6 +36,7 @@ export default function DocumentPage() {
   const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [pdfSuccess, setPdfSuccess] = useState<string | null>(null);
+  const [newTranscriptionsDialog, setNewTranscriptionsDialog] = useState(false);
 
   const autoDismiss = useCallback((setter: (v: null) => void, ms = 10000) => {
     const t = setTimeout(() => setter(null), ms);
@@ -51,12 +52,23 @@ export default function DocumentPage() {
     const fetch = async () => {
       try {
         setLoading(true);
-        const [projectRes, docRes] = await Promise.all([
+        const [projectRes, docRes, recordingsRes] = await Promise.all([
           projectsApi.getById(Number(projectId)),
           documentsApi.getByProject(Number(projectId)),
+          recordingsApi.getByProject(Number(projectId)),
         ]);
         if (projectRes.data.success && projectRes.data.data) setProject(projectRes.data.data);
-        if (docRes.data.success && docRes.data.data) setDocument(docRes.data.data);
+        const doc = docRes.data.success ? docRes.data.data : null;
+        if (doc) setDocument(doc);
+
+        // Check if any completed recordings exist that were created after the document was last updated
+        if (doc && recordingsRes.data.success && recordingsRes.data.data) {
+          const docTimestamp = doc.updated_at ?? doc.created_at ?? '';
+          const hasNew = recordingsRes.data.data.some(
+            (r) => r.status === 'completed' && (r.created_at ?? '') > docTimestamp
+          );
+          if (hasNew) setNewTranscriptionsDialog(true);
+        }
       } catch (err: unknown) {
         setError(getErrorMessage(err, 'Failed to load document'));
       } finally {
@@ -258,6 +270,27 @@ export default function DocumentPage() {
           autoSaveDelay={3000}
         />
       )}
+
+      {/* New transcriptions available popup */}
+      <Dialog open={newTranscriptionsDialog} onClose={() => setNewTranscriptionsDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>New transcriptions available</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ fontSize: '1.1rem', lineHeight: 1.7, color: COLORS.inkLight }}>
+            There are new transcriptions that haven't been added to this document yet. Would you like to add them now?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="outlined" onClick={() => setNewTranscriptionsDialog(false)}>
+            Not now
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => { setNewTranscriptionsDialog(false); handleAppend(); }}
+          >
+            Add new transcriptions
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Combine confirm */}
       <Dialog open={combineConfirmOpen} onClose={() => setCombineConfirmOpen(false)} maxWidth="sm" fullWidth>

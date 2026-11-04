@@ -151,3 +151,7 @@ frontend/dist/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# SQLite sidecar files
+*.db-shm
+*.db-wal

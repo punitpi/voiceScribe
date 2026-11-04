@@ -30,7 +30,7 @@ interface PDFSettingsDialogProps {
 export default function PDFSettingsDialog({ open, onClose, onGenerate, generating }: PDFSettingsDialogProps) {
   const [settings, setSettings] = useState<Partial<PDFSettings>>({
     pageSize: 'A4',
-    fontSize: 12,
+    fontSize: 16,
     lineSpacing: 1.5,
     includeHeader: true,
     includePageNumbers: true,
@@ -81,8 +81,8 @@ export default function PDFSettingsDialog({ open, onClose, onGenerate, generatin
             <Slider
               value={settings.fontSize}
               onChange={(_, value) => setSettings({ ...settings, fontSize: value as number })}
-              min={10} max={14} step={1}
-              marks={[{ value: 10, label: '10' }, { value: 12, label: '12' }, { value: 14, label: '14' }]}
+              min={10} max={25} step={1}
+              marks={[{ value: 10, label: '10' }, { value: 16, label: '16' }, { value: 20, label: '20' }, { value: 25, label: '25' }]}
               valueLabelDisplay="auto"
               sx={{
                 color: COLORS.gold,

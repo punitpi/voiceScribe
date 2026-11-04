@@ -334,8 +334,8 @@ export default function RecordingsList({ recordings, onRecordingDeleted, onTrans
             <Typography
               sx={{
                 whiteSpace: 'pre-wrap',
-                fontSize: '1.0625rem',
-                lineHeight: 1.85,
+                fontSize: '1.35rem',
+                lineHeight: 2,
                 fontFamily: 'Georgia, serif',
                 color: COLORS.ink,
               }}
